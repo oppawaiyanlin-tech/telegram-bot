@@ -50,8 +50,13 @@ async def process_delete(callback_query: types.CallbackQuery):
         await callback_query.answer("⚠️ ဖျက်၍ မရပါ။", show_alert=True)
 
 async def main():
+    # Render အတွက် Web Server ကို အရင်စတင်မယ်
     await start_web_server()
+    
+    # ရှေ့က Webhook ကပ်နေတာကို အလိုအလျောက် ရှင်းထုတ်မည်
+    await bot.delete_webhook(drop_pending_updates=True)
+    
+    # Telegram Bot ကို စတင်မယ်
     await dp.start_polling(bot)
-
 if __name__ == "__main__":
     asyncio.run(main())
