@@ -1,11 +1,15 @@
 import os
 import asyncio
+import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Render ထဲက Environment Variable ကနေ Token ကို လုံခြုံစွာ ယူသုံးခြင်း
+# Render ထဲက Environment Variable ကနေ Token များကို လုံခြုံစွာ ယူသုံးခြင်း
 TOKEN = os.environ.get("BOT_TOKEN")
+SIGHTENGINE_USER = os.environ.get("SIGHTENGINE_USER")
+SIGHTENGINE_SECRET = os.environ.get("SIGHTENGINE_SECRET")
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -43,6 +47,30 @@ def find_bad_word(text: str) -> str:
             return word
     return None
 
+# Sightengine ဖြင့် ပုံကို NSFW စစ်ဆေးခြင်း
+async def check_nsfw(photo_url: str) -> bool:
+    if not SIGHTENGINE_USER or not SIGHTENGINE_SECRET:
+        return False # API Key မရှိသေးရင် ကျော်သွားမယ်
+        
+    params = {
+        'url': photo_url,
+        'models': 'nudity-2.1',
+        'api_user': SIGHTENGINE_USER,
+        'api_secret': SIGHTENGINE_SECRET
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get('https://api.sightengine.com/1.0/check.json', params=params) as response:
+                data = await response.json()
+                if data.get('status') == 'success':
+                    nudity = data.get('nudity', {})
+                    # ညစ်ညမ်းမှုရာခိုင်နှုန်း 0.5 (50%) ကျော်ရင် True ပေးမည်
+                    if nudity.get('safe', 1.0) < 0.5 or nudity.get('raw', 0.0) > 0.5:
+                        return True
+    except Exception as e:
+        print(f"NSFW Check Error: {e}")
+    return False
+
 @dp.message(F.text.startswith("/"))
 async def handle_commands(message: types.Message):
     if message.text == "/start":
@@ -54,12 +82,23 @@ async def handle_photo(message: types.Message):
     caption_text = message.caption or ""
     matched_word = find_bad_word(caption_text)
     if matched_word:
-        await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
+        await message.reply(f"⚠️ ပို့စ်စာသားထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်လို့မရပါ။")
+        return
+
+    # ပုံ၏ Telegram file path ကို ယူခြင်း
+    file_id = message.photo[-1].file_id
+    file = await bot.get_file(file_id)
+    file_path = file.file_path
+    photo_url = f"https://api.telegram.org/file/bot{bot.token}/{file_path}"
+
+    # NSFW စစ်ဆေးခြင်း
+    is_nsfw = await check_nsfw(photo_url)
+    if is_nsfw:
+        await message.reply("⚠️ ပုံထဲတွင် မသင့်လျော်သော (NSFW/Sex) ပါဝင်နေသဖြင့် Channel သို့ တင်ခွင့်မပြုပါ။")
         return
 
     CHANNEL_ID = "@ydbumailbox"
-    
-    sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=message.photo[-1].file_id, caption=message.caption)
+    sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=file_id, caption=message.caption)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
@@ -73,7 +112,7 @@ async def handle_text(message: types.Message):
 
     matched_word = find_bad_word(message.text)
     if matched_word:
-        await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
+        await message.reply(f"⚠️ စာထဲမှာ မိုက်ရိုင်းတဲ့စာသား  ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
     CHANNEL_ID = "@ydbumailbox"
