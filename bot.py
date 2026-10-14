@@ -5,7 +5,8 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOKEN = "8613893374:AAGfwCFV59rMytI7QAgqIIysIml0XQt1J-I"
+# Token အမှန်ကို ထည့်သွင်းထားပါသည်
+TOKEN = "8613893374:AAGfwCfV59rMytI7QAgqIIysImlOXQt1J-I"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -13,7 +14,6 @@ dp = Dispatcher()
 SIGHTENGINE_API_USER = "1243376243"
 SIGHTENGINE_API_SECRET = "44FbxJmUhnuP8a5sCD3yfQJeZm6CQrSa"
 
-# မသင့်လျော်သော စကားလုံးများစာရင်း
 BAD_WORDS = [
     "လီး", "စက်ပက်", "စောက်ဖုတ်", "စောက်ဖုတ်ပြဲမ", "မသာမ", "ဖာသည်မ", 
     "မအေလိုး", "ခွေးမသား", "လီးပဲ", "ကိုယ်မေကိုလိုး", "နှမလိုး", "ငါလိုးမသား", 
@@ -25,7 +25,6 @@ BAD_WORDS = [
     "ဂွေးဥ", "ဂွေးစိ", "နို့စို့ချင်တယ်", "နို့ကိုင်ချင်တယ်", "fuck", "shit", "bitch", "asshole"
 ]
 
-# Render Port ဖွင့်ရန်
 async def handle(request):
     return web.Response(text="Bot is running!")
 
@@ -39,7 +38,6 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine ဖြင့် ပုံစစ်ဆေးခြင်း
 async def check_nsfw(file_url: str) -> bool:
     params = {
         'url': file_url,
@@ -56,7 +54,6 @@ async def check_nsfw(file_url: str) -> bool:
                     return True
     return False
 
-# စာသားထဲတွင် မသင့်လျော်သော စကားလုံး ပါဝင်ခြင်း ရှိမရှိ စစ်ဆေးခြင်း
 def find_bad_word(text: str) -> str:
     if not text:
         return None
@@ -69,10 +66,7 @@ def find_bad_word(text: str) -> str:
 @dp.message(F.text.startswith("/"))
 async def handle_commands(message: types.Message):
     if message.text == "/start":
-        await message.reply(
-            "မင်္ဂလာပါရှင့်။ ဤဘော့တ်မှတဆင့် Channel သို့ ပုံနှင့် စာများကို တင်နိုင်ပါသည်။\n"
-            "• ပို့ချင်သော စာ (သို့မဟုတ်) ပို့စ်ပုံကို ပို့ပေးရုံပါပဲ။"
-        )
+        await message.reply("မင်္ဂလာပါရှင့်။ ဤဘော့တ်မှတဆင့် Channel သို့ ပုံနှင့် စာများကို တင်နိုင်ပါသည်။")
     return
 
 @dp.message(F.photo)
@@ -80,7 +74,7 @@ async def handle_photo(message: types.Message):
     caption_text = message.caption or ""
     matched_word = find_bad_word(caption_text)
     if matched_word:
-        await message.reply(f"⚠️ စာထဲမှာ မိုက်ရိုင်းတဲ့စာသား  ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
+        await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
     photo = message.photo[-1]
