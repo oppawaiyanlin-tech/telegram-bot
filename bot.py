@@ -47,7 +47,7 @@ def find_bad_word(text: str) -> str:
             return word
     return None
 
-# Sightengine ဖြင့် ပုံကို အထူးတင်းကြပ်စွာ စစ်ဆေးခြင်း
+# Sightengine ဖြင့် ပုံကို အထူးတင်းကြပ်စွာ စစ်ဆေးခြင်း (Fail-closed စနစ်နှင့် nudity-2.1,wad မော်ဒယ်များ)
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_USER or not SIGHTENGINE_SECRET:
         return True # API Key မရှိပါက လုံခြုံရေးအရ ပုံတင်ခွင့်မပြုပါ
@@ -56,31 +56,31 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
         url = 'https://api.sightengine.com/1.0/check.json'
         data = aiohttp.FormData()
         data.add_field('media', file_bytes, filename='photo.jpg', content_type='image/jpeg')
-        data.add_field('models', 'nudity-2.1')
+        data.add_field('models', 'nudity-2.1,wad')
         data.add_field('api_user', SIGHTENGINE_USER)
         data.add_field('api_secret', SIGHTENGINE_SECRET)
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, data=data) as response:
                 res_data = await response.json()
-                print(f"FULL SIGHTENGINE RESPONSE: {res_data}") # Render Log ထဲမှာ သေချာပေါ်လာပါမယ်
+                print(f"FULL SIGHTENGINE RESPONSE: {res_data}")
                 
                 if res_data.get('status') == 'success':
                     nudity = res_data.get('nudity', {})
                     
-                    # တန်ဖိုးတစ်ခုချင်းစီကို စစ်ဆေးမည် (အနည်းဆုံး score တစ်ခုခုပါတာနဲ့ တားမည်)
                     safe_score = nudity.get('safe', 1.0)
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
                     
-                    if safe_score < 0.95 or raw_score > 0.01 or partial_score > 0.01:
+                    # သန့်ရှင်းမှု 0.99 အောက် လျော့သွားလျှင် (သို့) nudity အနည်းငယ်ပါလျှင် တားမည်
+                    if safe_score < 0.99 or raw_score > 0.0 or partial_score > 0.0:
                         return True
                 else:
                     print(f"Sightengine API Error Response: {res_data}")
-                    return True # API ဘက်က error တက်ရင်တောင် လုံခြုံရေးအရ ပိတ်မည်
+                    return True
     except Exception as e:
         print(f"NSFW File Check Exception: {e}")
-        return True # Exception ဖြစ်လျှင်ပါ ပိတ်မည်
+        return True
         
     return False
 
