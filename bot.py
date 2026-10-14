@@ -5,7 +5,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOKEN = "8993727666:AAGbcfOUdLJv_p8Uqm0WiZH6l78SeSC8axM"
+TOKEN = "8613893374:AAGfwCFV59rMytI7QAgqIIysIml0XQt1J-I"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -13,7 +13,7 @@ dp = Dispatcher()
 SIGHTENGINE_API_USER = "1243376243"
 SIGHTENGINE_API_SECRET = "44FbxJmUhnuP8a5sCD3yfQJeZm6CQrSa"
 
-# ကိုကို ပေးထားသော မသင့်လျော်သော စကားလုံးများစာရင်း
+# မသင့်လျော်သော စကားလုံးများစာရင်း
 BAD_WORDS = [
     "လီး", "စက်ပက်", "စောက်ဖုတ်", "စောက်ဖုတ်ပြဲမ", "မသာမ", "ဖာသည်မ", 
     "မအေလိုး", "ခွေးမသား", "လီးပဲ", "ကိုယ်မေကိုလိုး", "နှမလိုး", "ငါလိုးမသား", 
@@ -56,7 +56,7 @@ async def check_nsfw(file_url: str) -> bool:
                     return True
     return False
 
-# စာသားထဲတွင် မသင့်လျော်သော စကားလုံး ပါဝင်ခြင်း ရှိမရှိ စစ်ဆေးပြီး တွေ့ရှိသော စကားလုံးကို ပြန်ပေးခြင်း
+# စာသားထဲတွင် မသင့်လျော်သော စကားလုံး ပါဝင်ခြင်း ရှိမရှိ စစ်ဆေးခြင်း
 def find_bad_word(text: str) -> str:
     if not text:
         return None
@@ -69,7 +69,10 @@ def find_bad_word(text: str) -> str:
 @dp.message(F.text.startswith("/"))
 async def handle_commands(message: types.Message):
     if message.text == "/start":
-        await message.reply("မင်္ဂလာပါရှင့်။ ဤဘော့တ်မှတဆင့် Channel သို့ ပုံနှင့် စာများကို တင်နိုင်ပါသည်။")
+        await message.reply(
+            "မင်္ဂလာပါရှင့်။ ဤဘော့တ်မှတဆင့် Channel သို့ ပုံနှင့် စာများကို တင်နိုင်ပါသည်။\n"
+            "• ပို့ချင်သော စာ (သို့မဟုတ်) ပို့စ်ပုံကို ပို့ပေးရုံပါပဲ။"
+        )
     return
 
 @dp.message(F.photo)
