@@ -47,16 +47,17 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine ၏ nudity-2.1 မော်ဒယ်ကို အသုံးပြု၍ တိကျခိုင်မာစွာ စစ်ဆေးခြင်း
+# Sightengine ဖြင့် အလွန်တင်းကျပ်စွာ စစ်ဆေးပြီး အမှားတွေ့ပါက လုံးဝပိတ်မည့် စနစ်
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
-        return False
+        print("API Credentials missing!")
+        return True  # Key မရှိရင် လုံခြုံရေးအရ ပိတ်မည်
         
     try:
         url = 'https://api.sightengine.com/1.0/check.json'
         data = aiohttp.FormData()
         data.add_field('media', file_bytes, filename='photo.jpg', content_type='image/jpeg')
-        data.add_field('models', 'nudity-2.1')
+        data.add_field('models', 'nudity-2.1,wad')
         data.add_field('api_user', SIGHTENGINE_API_USER)
         data.add_field('api_secret', SIGHTENGINE_API_SECRET)
 
@@ -73,15 +74,15 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     sexual_activity = nudity.get('sexual_activity', 0.0)
                     sexual_display = nudity.get('sexual_display', 0.0)
                     
-                    # ဤနေရာတွင် တကယ့် Sex ပုံစံစစ်စစ်များကို ချက်ချင်းဖမ်းမည့် ကိန်းဂဏန်းများ သတ်မှတ်ထားသည်
-                    # raw_score (ကိုယ်တုံးလုံး) သို့မဟုတ် sexual_activity (လိင်ပိုင်းဆိုင်ရာ လှုပ်ရှားမှု) အနည်းငယ်ရှိတာနဲ့ တားမည်
-                    if raw_score > 0.15 or sexual_activity > 0.05 or sexual_display > 0.05 or safe_score < 0.70:
+                    # တကယ့် အပြာပုံမှန်သမျှ လုံးဝမလွတ်အောင် အလွန်တင်းကျပ်စွာ စစ်ဆေးမည်
+                    if raw_score > 0.03 or sexual_activity > 0.01 or sexual_display > 0.01 or partial_score > 0.15 or safe_score < 0.90:
                         return True
                 else:
-                    return False
+                    print(f"API Error Status: {res_data}")
+                    return True  # API ဘက်က Status မမှန်ရင် လုံခြုံရေးအရ ပိတ်မည်
     except Exception as e:
         print(f"NSFW File Check Exception: {e}")
-        return False
+        return True  # Exception ဖြစ်ရင်လည်း ပိတ်မည် (အပြာပုံများ မလွတ်စေရန်)
         
     return False
 
