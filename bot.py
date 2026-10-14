@@ -47,7 +47,7 @@ async def start_web_server():
 
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
-        return False
+        return True # API မရှိရင် Fail-closed အနေနဲ့ ပိတ်မယ်
         
     try:
         url = 'https://api.sightengine.com/1.0/check.json'
@@ -60,6 +60,7 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
         async with aiohttp.ClientSession() as session_api:
             async with session_api.post(url, data=data) as response:
                 res_data = await response.json()
+                print(f"FULL SIGHTENGINE RESPONSE: {res_data}")
                 
                 if res_data.get('status') == 'success':
                     nudity = res_data.get('nudity', {})
@@ -67,13 +68,14 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
                     
-                    if safe_score < 0.4 or raw_score > 0.5 or partial_score > 0.6:
+                    # Sex ပုံများကို တိကျစွာဖမ်းရန် Safe Score 0.9 အောက်ဆိုလျှင် သို့မဟုတ် Nudity ပါလျှင် တားမည်
+                    if safe_score < 0.9 or raw_score > 0.05 or partial_score > 0.1:
                         return True
                 else:
-                    return False
+                    return True
     except Exception as e:
         print(f"NSFW File Check Exception: {e}")
-        return False
+        return True
         
     return False
 
@@ -174,7 +176,7 @@ async def handle_photo(message: types.Message):
         
         is_nsfw = await check_nsfw_file(file_bytes)
         if is_nsfw:
-            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် တင်၍မရပါ။")
+            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
             return
 
         CHANNEL_ID = "@ydbumailbox"
