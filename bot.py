@@ -114,8 +114,14 @@ async def handle_photo(message: types.Message):
                 messages = album_cache.pop(media_group_id)
                 del album_locks[media_group_id]
                 
+            # ဘယ် မက်ဆေ့ချ်မှာ Caption ပါလာသည်ဖြစ်စေ ရှာယူခြင်း
+            caption_text = ""
+            for m in messages:
+                if m.caption:
+                    caption_text = m.caption
+                    break
+
             # ၁။ မိုက်ရိုင်းစာသား စစ်ဆေးခြင်း
-            caption_text = next((m.caption for m in messages if m.caption), "")
             matched_word = find_bad_word(caption_text)
             if matched_word:
                 await messages[0].reply(f"⚠️ စာထဲတွင် မိုက်ရိုင်းသော စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်၍မရပါ။")
@@ -134,8 +140,8 @@ async def handle_photo(message: types.Message):
                     await msg.reply("⚠️ တင်ပြလာသော ပုံများတွင် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် တင်၍မရပါ။")
                     return
                 
-                # ပထမဆုံးပုံမှာပဲ Caption ထည့်ပေးရန်
-                cap = msg.caption if idx == 0 else None
+                # ပထမဆုံးပုံမှာ ရှာတွေ့ထားတဲ့ Caption ကို ထည့်ပေးရန်
+                cap = caption_text if idx == 0 else None
                 media_list.append(InputMediaPhoto(media=photo.file_id, caption=cap))
 
             CHANNEL_ID = "@ydbumailbox"
@@ -157,7 +163,7 @@ async def handle_photo(message: types.Message):
     caption_text = message.caption or ""
     matched_word = find_bad_word(caption_text)
     if matched_word:
-        await message.reply(f"⚠️ စာထဲတွင် မိုက်ရိုင်းသော စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်၍မရပါ။")
+        await message.reply(f"⚠️ စာသားတွင် မိုက်ရိုင်းသော စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်၍မရပါ။")
         return
 
     try:
@@ -168,7 +174,7 @@ async def handle_photo(message: types.Message):
         
         is_nsfw = await check_nsfw_file(file_bytes)
         if is_nsfw:
-            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
+            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် တင်၍မရပါ။")
             return
 
         CHANNEL_ID = "@ydbumailbox"
