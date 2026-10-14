@@ -45,7 +45,7 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine ဖြင့် Sex ပုံများကို တိကျမှန်ကန်စွာ စစ်ဆေးမည့် လုပ်ဆောင်ချက်
+# Sightengine ဖြင့် ပုံစစ်ဆေးခြင်း (nudity-2.1,wad နှင့် မူရင်းတန်ဖိုးများအတိုင်း)
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
         return False
@@ -54,7 +54,7 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
         url = 'https://api.sightengine.com/1.0/check.json'
         data = aiohttp.FormData()
         data.add_field('media', file_bytes, filename='photo.jpg', content_type='image/jpeg')
-        data.add_field('models', 'nudity-2.1')
+        data.add_field('models', 'nudity-2.1,wad')
         data.add_field('api_user', SIGHTENGINE_API_USER)
         data.add_field('api_secret', SIGHTENGINE_API_SECRET)
 
@@ -66,12 +66,11 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 if res_data.get('status') == 'success':
                     nudity = res_data.get('nudity', {})
                     safe_score = nudity.get('safe', 1.0)
-                    sexual_activity = nudity.get('sexual_activity', 0.0)
-                    sexual_display = nudity.get('sexual_display', 0.0)
-                    suggestive = nudity.get('suggestive', 0.0)
+                    raw_score = nudity.get('raw', 0.0)
+                    partial_score = nudity.get('partial', 0.0)
                     
-                    # လိင်ပိုင်းဆိုင်ရာ အချက်ပြမှု တစ်စုံတစ်ရာ ပါလာပါက (သို့မဟုတ် safe score နိမ့်ပါက) တားဆီးမည်
-                    if safe_score < 0.8 or sexual_activity > 0.1 or sexual_display > 0.1 or suggestive > 0.3:
+                    # မူရင်း ပထမဆုံး အဆင်ပြေခဲ့သော သတ်မှတ်ချက်
+                    if safe_score < 0.75 or raw_score > 0.4 or partial_score > 0.5:
                         return True
                 else:
                     return False
