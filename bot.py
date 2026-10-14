@@ -47,10 +47,10 @@ def find_bad_word(text: str) -> str:
             return word
     return None
 
-# Sightengine ဖြင့် ပုံကို အထူးတင်းကြပ်စွာ စစ်ဆေးခြင်း (Fail-safe ပါဝင်သည်)
+# Sightengine ဖြင့် ပုံကို အလွန်တင်းကြပ်စွာ စစ်ဆေးခြင်း (Fail-closed စနစ်)
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_USER or not SIGHTENGINE_SECRET:
-        return False
+        return True # API Key မရှိရင် လုံခြုံရေးအရ ပုံတင်ခွင့် မပေးပါ။
         
     try:
         url = 'https://api.sightengine.com/1.0/check.json'
@@ -64,19 +64,23 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
             async with session.post(url, data=data) as response:
                 res_data = await response.json()
                 print(f"Sightengine Response: {res_data}")
+                
                 if res_data.get('status') == 'success':
                     nudity = res_data.get('nudity', {})
+                    safe_score = nudity.get('safe', 1.0)
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
-                    safe_score = nudity.get('safe', 1.0)
                     
-                    # ညစ်ညမ်းမှု အနည်းငယ်ပါတာနဲ့ (သို့မဟုတ် safe score 0.9 ထက်နည်းရင်) တားမည်
-                    if raw_score > 0.02 or partial_score > 0.05 or safe_score < 0.90:
+                    # သန့်ရှင်းမှု (safe score) က 0.99 ထက် နည်းနေရင် (သို့) nudity အနည်းငယ်ပါရင် NSFW ဟု သတ်မှတ်မည်
+                    if safe_score < 0.99 or raw_score > 0.0 or partial_score > 0.0:
                         return True
                 else:
-                    print(f"Sightengine API Error: {res_data}")
+                    # API ဘက်မှ error တက်လျှင်လည်း လုံခြုံရေးအရ ပုံကို တားဆီးမည်
+                    return True
     except Exception as e:
         print(f"NSFW File Check Error: {e}")
+        return True # Error ဖြစ်လျှင်ပါ တားဆီးမည်
+        
     return False
 
 @dp.message(F.text.startswith("/"))
