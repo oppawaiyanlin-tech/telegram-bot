@@ -63,6 +63,7 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, data=data) as response:
                 res_data = await response.json()
+                print(f"Sightengine Response: {res_data}") # Render Log ထဲမှာ သွားစစ်လို့ရအောင် ထည့်ထားပေးပါတယ်
                 if res_data.get('status') == 'success':
                     nudity = res_data.get('nudity', {})
                     raw_score = nudity.get('raw', 0.0)
@@ -100,7 +101,7 @@ async def handle_photo(message: types.Message):
     is_nsfw = await check_nsfw_file(file_bytes)
     if is_nsfw:
         await message.reply("⚠️ ပုံထဲတွင် မသင့်လျော်သော (NSFW/Sex) ပါဝင်နေသဖြင့် Channel သို့ တင်ခွင့်မပြုပါ။")
-        return
+        return  # <-- ဒီ return လေး ထည့်ပေးလိုက်ပါပြီ (ဒီကောင်က Channel ထဲ မရောက်အောင် တားပေးတာပါ)
 
     CHANNEL_ID = "@ydbumailbox"
     sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=file_id, caption=message.caption)
