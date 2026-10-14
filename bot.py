@@ -1,113 +1,69 @@
+import os
 import asyncio
-import logging
-import aiohttp
-from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import Command
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiohttp import web
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Bot Token နဲ့ Sightengine API Credentials
+# ကိုကို့ရဲ့ Bot Token
 TOKEN = "8836515568:AAFrcGRN_r3Es_FCv1b4At7hgACarRpMN4U"
-CHANNEL_ID = "@yadanabonfreedom"
-
-# Sightengine API Key များ
-SIGHTENGINE_API_USER = "1243376243"
-SIGHTENGINE_API_SECRET = "44FbxJmUhnUP8a5sCD3yfQUeZm6CQrSa"
-
 bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+dp = Dispatcher(bot)
 
-# ပို့စ်များကို သိမ်းဆည်းရန် Dictionary (User တစ်ဦးချင်းစီရဲ့ ပို့စ်များဖျက်ရန်)
-user_posts = {}
+# ==========================================
+# 1. Render အတွက် Port ဖွင့်ပေးမယ့် Dummy Web Server (Port Error ရှင်းရန်)
+# ==========================================
+async def handle(request):
+    return web.Response(text="Bot is running!")
 
-# Sightengine ဖြင့် ပုံကို စစ်ဆေးမယ့် Function
-async def check_image_safety(file_url: str) -> bool:
-    url = "https://api.sightengine.com/1.0/check.json"
-    params = {
-        'url': file_url,
-        'models': 'nudity-2.0,wad,gore',  # ညစ်ညမ်းမှု၊ လက်နက်၊ အကြမ်းဖက်/သွေးထွက်သံယိုမှု စစ်ဆေးရန်
-        'api_user': SIGHTENGINE_API_USER,
-        'api_secret': SIGHTENGINE_API_SECRET,
-    }
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, params=params) as response:
-            if response.status == 200:
-                data = await response.json()
-                
-                # Nudity (ညစ်ညမ်းမှု) စစ်ဆေးခြင်း
-                nudity = data.get('nudity', {})
-                if nudity.get('sexual_activity', 0) > 0.5 or nudity.get('sexual_display', 0) > 0.5 or nudity.get('erotica', 0) > 0.6:
-                    return False # မသင့်လျော်ပါ
-                
-                # Gore / Violence (အကြမ်းဖက်မှု/သွေးထွက်သံယိုမှု) စစ်ဆေးခြင်း
-                gore = data.get('gore', {})
-                if gore.get('prob', 0) > 0.5:
-                    return False # မသင့်လျော်ပါ
-                    
-                return True # သန့်ရှင်းသည် (Safe ဖြစ်သည်)
-            
-    return True # API အလုပ်မလုပ်ရင် ပုံမှန်အတိုင်း လွှတ်ပေးမည်
+app = web.Application()
+app.add_routes([web.get('/', handle)])
 
-@dp.message(Command("start"))
-async def start_handler(message: types.Message):
-    await message.answer("မင်္ဂလာပါ ကိုကို့ရဲ့ Submission Bot မှ ကြိုဆိုပါတယ်။ ပုံ၊ ဗီဒီယို သို့မဟုတ် စာသားများ ပို့နိုင်ပါပြီ။")
+async def start_web_server():
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 
-# ပုံ သို့မဟုတ် ဗီဒီယို လက်ခံစစ်ဆေးခြင်း
-@dp.message(F.photo | F.video)
-async def media_handler(message: types.Message):
-    await message.answer("🔍 ပုံ/ဗီဒီယိုကို စစ်ဆေးနေပါပြီ...")
-    
-    file_id = None
+# ==========================================
+# 2. Bot ရဲ့ အဓိက လုပ်ဆောင်ချက်များ (Submission, Page ပုံစံပြောင်းခြင်း နှင့် Delete Button)
+# ==========================================
+@dp.message_handler(content_types=['photo', 'video', 'text'])
+async def handle_submission(message: types.Message):
+    # Bot ကို Private မှာ ပို့လာတာကို Channel ဆီ Page ပုံစံနဲ့ တင်ပေးမယ့် logic
+    # User ကိုယ်တိုင် ဖျက်လို့ရမယ့် Delete Button ထည့်သွင်းခြင်း
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("🗑 ဖျက်မည် (Delete)", callback_data="delete_post"))
+
+    # Channel ID (ကိုကို့ရဲ့ channel username သို့မဟုတ် id ထည့်ရန်)
+    CHANNEL_ID = "@yadanabonfreedom"
+
     if message.photo:
-        file_id = message.photo[-1].file_id
-    elif message.video:
-        file_id = message.video.file_id
+        caption = f"ส่งมาจาก: User\n{message.caption or ''}"
+        sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=message.photo[-1].file_id, caption=caption, reply_markup=keyboard)
+        await message.reply("✅ ပို့စ်ကို Channel တင်ပြီးပါပြီ။ ဖျက်ချင်ရင် အောက်ပါခလုတ်ကို သုံးပါ။", reply_markup=keyboard)
+    elif message.text:
+        text_content = f"ส่งมาจาก: User\n\n{message.text}"
+        sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=text_content, reply_markup=keyboard)
+        await message.reply("✅ ပို့စ်ကို Channel တင်ပြီးပါပြီ။", reply_markup=keyboard)
 
-    # Telegram ကနေ ဖိုင်လင့်ခ် ရယူခြင်း
-    file = await bot.get_file(file_id)
-    file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
-    
-    # ပုံဖြစ်ပါက Sightengine ဖြင့် စစ်ဆေးမည်
-    if message.photo:
-        is_safe = await check_image_safety(file_url)
-        if not is_safe:
-            await message.answer("❌ တောင်းပန်ပါတယ်၊ ဤပုံတွင် မသင့်လျော်သော ညစ်ညမ်းမှု သို့မဟုတ် အကြမ်းဖက်မှုများ ပါဝင်နေသဖြင့် Channel တင်ခွင့်မပြုပါ။")
-            return
+@dp.callback_query_handler(lambda c: c.data == 'delete_post')
+async def process_delete(callback_query: types.CallbackQuery):
+    try:
+        # Channel ထဲက ပို့စ်ကို ဖျက်ရန်
+        await bot.delete_message(chat_id=callback_query.message.chat.id, message_id=callback_query.message.message_id)
+        await callback_query.answer("🗑 ပို့စ်ကို အောင်မြင်စွာ ဖျက်လိုက်ပါပြီ။", show_alert=True)
+    except Exception as e:
+        await callback_query.answer("⚠️ ပို့စ်ဖျက်၍ မရပါ (သို့မဟုတ် ဖျက်ပြီးသား ဖြစ်နေပါသည်)။", show_alert=True)
 
-    # စစ်ဆေးပြီး လုံခြုံပါက Channel သို့ ပို့မည်
-    if message.photo:
-        sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=file_id, caption=message.caption or "")
-    elif message.video:
-        sent_msg = await bot.send_video(chat_id=CHANNEL_ID, video=file_id, caption=message.caption or "")
-
-    user_id = message.from_user.id
-    if user_id not in user_posts:
-        user_posts[user_id] = []
-    user_posts[user_id].append(sent_msg.message_id)
-
-    # ဖျက်ရန် ခလုတ်ပါသော အသိပေးချက်
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="🗑️ ဤပို့စ်ကို ဖျက်မည်", callback_data=f"del_{sent_msg.message_id}")]
-    ])
-    await message.answer("✅ ပို့စ်ကို Channel သို့ အောင်မြင်စွာ တင်ပြီးပါပြီ။", reply_markup=keyboard)
-
-# ပို့စ်ဖျက်ရန် Callback Handler
-@dp.callback_query(F.data.startswith("del_"))
-async def delete_post_handler(callback: types.CallbackQuery):
-    msg_id = int(callback.data.split("_")[1])
-    user_id = callback.from_user.id
-
-    if user_id in user_posts and msg_id in user_posts[user_id]:
-        try:
-            await bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
-            user_posts[user_id].remove(msg_id)
-            await callback.message.edit_text("🗑️ သင့်ပို့စ်ကို အောင်မြင်စွာ ဖျက်ပြီးပါပြီ။")
-        except Exception as e:
-            await callback.answer("ဖျက်၍မရပါ သို့မဟုတ် ပို့စ်ဟောင်းသွားပါပြီ။", show_alert=True)
-    else:
-        await callback.answer("ဤပို့စ်ကို ဖျက်ရန် ခွင့်ပြုချက်မရှိပါ။", show_alert=True)
-
+# ==========================================
+# 3. Main Function (Web Server နဲ့ Bot ကို တပြိုင်နက် Run ရန်)
+# ==========================================
 async def main():
+    # Render အတွက် Web Server ကို အရင်စတင်မယ်
+    await start_web_server()
+    
+    # Telegram Bot ကို စတင်မယ်
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
