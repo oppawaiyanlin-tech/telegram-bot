@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # Bot Token နဲ့ Sightengine API Credentials
-TOKEN = "8836515568:AAEXvKfeOQA5pgogl1cRyvhdofGKemgHQSU"
+TOKEN = "8836515568:AAFrcGRN_r3Es_FCv1b4At7hgACarRpMN4U"
 CHANNEL_ID = "@yadanabonfreedom"
 
 # Sightengine API Key များ
