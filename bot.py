@@ -5,8 +5,8 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Token အမှန်ကို ထည့်သွင်းထားပါသည်
-TOKEN = "8613893374:AAGfwCfV59rMytI7QAgqIIysImlOXQt1J-I"
+# Token အသစ်ကို ထည့်သွင်းထားပါသည်
+TOKEN = "8374975220:AAFfjfgMSisDp3n09XFM5mg_QXYmY83Mcqk"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
