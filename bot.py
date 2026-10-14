@@ -1,98 +1,114 @@
 import asyncio
+import logging
+import aiohttp
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.storage.memory import MemoryStorage
 
-API_TOKEN = '8836515568:AAEXvKfeOQA5pgogl1cRyvhdofGKemgHQSU'
-CHANNEL_ID = '@yadanabonfreedom'
+# Bot Token နဲ့ Sightengine API Credentials
+TOKEN = "8836515568:AAEXvKfeOQA5pgogl1cRyvhdofGKemgHQSU"
+CHANNEL_ID = "@yadanabonfreedom"
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+# Sightengine API Key များ
+SIGHTENGINE_API_USER = "1243376243"
+SIGHTENGINE_API_SECRET = "44FbxJmUhnUP8a5sCD3yfQUeZm6CQrSa"
 
-# User တစ်ဦးချင်းစီရဲ့ ပို့စ်များကို မှတ်ထားရန် (User ID -> List of posts)
+bot = Bot(token=TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
+
+# ပို့စ်များကို သိမ်းဆည်းရန် Dictionary (User တစ်ဦးချင်းစီရဲ့ ပို့စ်များဖျက်ရန်)
 user_posts = {}
 
-@dp.message(Command("start"))
-async def send_welcome(message: types.Message):
-    await message.reply(
-        "မင်္ဂလာပါရှင်။ Page မှာ တင်ချင်တဲ့ စာ သို့မဟုတ် ပုံများကို ဤ Bot ထဲသို့ ပို့ပေးပါ။\n\n"
-        "သင်တင်ထားသော ပို့စ်များကို ပြန်ကြည့်ရန်နှင့် ဖျက်ရန် **/myposts** ဟု ရိုက်နှိပ်ပါ။"
-    )
-
-# ကိုယ်တင်ထားတဲ့ ပို့စ်များကို ကြည့်ရန်နှင့် ဖျက်ရန် Command
-@dp.message(Command("myposts"))
-async def show_my_posts(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in user_posts or not user_posts[user_id]:
-        await message.reply("ယခုလောလောဆယ်တွင် သင်တင်ထားသော ပို့စ်များ မရှိသေးပါ။")
-        return
-
-    builder = InlineKeyboardBuilder()
-    for post in user_posts[user_id]:
-        # ပို့စ်တစ်ခုချင်းစီအတွက် ဖျက်ရန် ခလုတ်များ ဖန်တီးခြင်း
-        preview_text = post['text'][:20] if post['text'] else "ဓာတ်ပုံပို့စ်"
-        builder.button(text=f"🗑 ဖျက်ရန်: {preview_text}", callback_data=f"del_user_post_{post['channel_msg_id']}")
+# Sightengine ဖြင့် ပုံကို စစ်ဆေးမယ့် Function
+async def check_image_safety(file_url: str) -> bool:
+    url = "https://api.sightengine.com/1.0/check.json"
+    params = {
+        'url': file_url,
+        'models': 'nudity-2.0,wad,gore',  # ညစ်ညမ်းမှု၊ လက်နက်၊ အကြမ်းဖက်/သွေးထွက်သံယိုမှု စစ်ဆေးရန်
+        'api_user': SIGHTENGINE_API_USER,
+        'api_secret': SIGHTENGINE_API_SECRET,
+    }
     
-    builder.adjust(1) # တစ်ကြောင်းချင်းစီ ပေါ်ရန်
-    await message.reply("အောက်ပါတို့သည် သင်တင်ထားသော ပို့စ်များ ဖြစ်ပါသည်။ ဖျက်လိုသည့် ပို့စ်ကို နှိပ်ပါ -", reply_markup=builder.as_markup())
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                
+                # Nudity (ညစ်ညမ်းမှု) စစ်ဆေးခြင်း
+                nudity = data.get('nudity', {})
+                if nudity.get('sexual_activity', 0) > 0.5 or nudity.get('sexual_display', 0) > 0.5 or nudity.get('erotica', 0) > 0.6:
+                    return False # မသင့်လျော်ပါ
+                
+                # Gore / Violence (အကြမ်းဖက်မှု/သွေးထွက်သံယိုမှု) စစ်ဆေးခြင်း
+                gore = data.get('gore', {})
+                if gore.get('prob', 0) > 0.5:
+                    return False # မသင့်လျော်ပါ
+                    
+                return True # သန့်ရှင်းသည် (Safe ဖြစ်သည်)
+            
+    return True # API အလုပ်မလုပ်ရင် ပုံမှန်အတိုင်း လွှတ်ပေးမည်
 
-# ပို့စ်များကို လက်ခံ၍ Channel သို့ ပို့ပေးခြင်း (Channel တွင် ဖျက်ခလုတ် မပါတော့ပါ)
-@dp.message(F.text | F.photo)
-async def handle_user_submission(message: types.Message):
-    try:
-        user_id = message.from_user.id
-        sent_message = None
-        
-        if message.photo:
-            photo_file_id = message.photo[-1].file_id
-            caption_text = message.caption or ""
-            sent_message = await bot.send_photo(
-                chat_id=CHANNEL_ID, 
-                photo=photo_file_id, 
-                caption=caption_text
-            )
-        elif message.text:
-            sent_message = await bot.send_message(
-                chat_id=CHANNEL_ID, 
-                text=message.text
-            )
-            
-        # User ရဲ့ ဇယားထဲသို့ ပို့စ် အချက်အလက် သိမ်းဆည်းခြင်း
-        if user_id not in user_posts:
-            user_posts[user_id] = []
-            
-        user_posts[user_id].append({
-            'channel_msg_id': sent_message.message_id,
-            'text': message.text or message.caption or ""
-        })
-            
-        await message.reply("ကျေးဇူးတင်ပါတယ်ရှင့်။ သင့်ပို့စ်ကို Page ထဲသို့ အောင်မြင်စွာ တင်ပြီးပါပြီ။ ပြန်ဖျက်လိုပါက **/myposts** ဟု ရိုက်ပါ။")
-    except Exception as e:
-        print(f"Error: {e}")
-        await message.reply("ပို့စ်တင်ရာတွင် အမှားအယွင်း ရှိသွားပါသည်။ Bot သည် Channel တွင် Admin ဖြစ်မဖြစ် စစ်ဆေးပါ။")
+@dp.message(Command("start"))
+async def start_handler(message: types.Message):
+    await message.answer("မင်္ဂလာပါ ကိုကို့ရဲ့ Submission Bot မှ ကြိုဆိုပါတယ်။ ပုံ၊ ဗီဒီယို သို့မဟုတ် စာသားများ ပို့နိုင်ပါပြီ။")
 
-# User ရဲ့ Chatbox မှနေ၍ ရွေးချယ်ဖျက်လိုက်သောအခါ
-@dp.callback_query(F.data.startswith("del_user_post_"))
-async def delete_user_specific_post(callback: types.CallbackQuery):
-    try:
-        channel_msg_id = int(callback.data.split("_")[3])
-        user_id = callback.from_user.id
-        
-        # Channel ထဲမှ ပို့စ်ကို ဖျက်ပစ်ခြင်း
-        await bot.delete_message(chat_id=CHANNEL_ID, message_id=channel_msg_id)
-        
-        # မှတ်တမ်းထဲမှ ဖယ်ရှားခြင်း
-        if user_id in user_posts:
-            user_posts[user_id] = [p for p in user_posts[user_id] if p['channel_msg_id'] != channel_msg_id]
-            
-        await callback.message.edit_text("✅ ရွေးချယ်ထားသော ပို့စ်ကို Channel ထဲမှ အောင်မြင်စွာ ဖျက်လိုက်ပါပြီရှင်။")
-    except Exception as e:
-        print(f"Error: {e}")
-        await callback.answer("ဒီပို့စ်ကို ဖျက်၍ မရတော့ပါ (သို့မဟုတ် ဖျက်ပြီးသား ဖြစ်နေပါသည်)။", show_alert=True)
+# ပုံ သို့မဟုတ် ဗီဒီယို လက်ခံစစ်ဆေးခြင်း
+@dp.message(F.photo | F.video)
+async def media_handler(message: types.Message):
+    await message.answer("🔍 ပုံ/ဗီဒီယိုကို စစ်ဆေးနေပါပြီ...")
+    
+    file_id = None
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    elif message.video:
+        file_id = message.video.file_id
+
+    # Telegram ကနေ ဖိုင်လင့်ခ် ရယူခြင်း
+    file = await bot.get_file(file_id)
+    file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+    
+    # ပုံဖြစ်ပါက Sightengine ဖြင့် စစ်ဆေးမည်
+    if message.photo:
+        is_safe = await check_image_safety(file_url)
+        if not is_safe:
+            await message.answer("❌ တောင်းပန်ပါတယ်၊ ဤပုံတွင် မသင့်လျော်သော ညစ်ညမ်းမှု သို့မဟုတ် အကြမ်းဖက်မှုများ ပါဝင်နေသဖြင့် Channel တင်ခွင့်မပြုပါ။")
+            return
+
+    # စစ်ဆေးပြီး လုံခြုံပါက Channel သို့ ပို့မည်
+    if message.photo:
+        sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=file_id, caption=message.caption or "")
+    elif message.video:
+        sent_msg = await bot.send_video(chat_id=CHANNEL_ID, video=file_id, caption=message.caption or "")
+
+    user_id = message.from_user.id
+    if user_id not in user_posts:
+        user_posts[user_id] = []
+    user_posts[user_id].append(sent_msg.message_id)
+
+    # ဖျက်ရန် ခလုတ်ပါသော အသိပေးချက်
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="🗑️ ဤပို့စ်ကို ဖျက်မည်", callback_data=f"del_{sent_msg.message_id}")]
+    ])
+    await message.answer("✅ ပို့စ်ကို Channel သို့ အောင်မြင်စွာ တင်ပြီးပါပြီ။", reply_markup=keyboard)
+
+# ပို့စ်ဖျက်ရန် Callback Handler
+@dp.callback_query(F.data.startswith("del_"))
+async def delete_post_handler(callback: types.CallbackQuery):
+    msg_id = int(callback.data.split("_")[1])
+    user_id = callback.from_user.id
+
+    if user_id in user_posts and msg_id in user_posts[user_id]:
+        try:
+            await bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
+            user_posts[user_id].remove(msg_id)
+            await callback.message.edit_text("🗑️ သင့်ပို့စ်ကို အောင်မြင်စွာ ဖျက်ပြီးပါပြီ။")
+        except Exception as e:
+            await callback.answer("ဖျက်၍မရပါ သို့မဟုတ် ပို့စ်ဟောင်းသွားပါပြီ။", show_alert=True)
+    else:
+        await callback.answer("ဤပို့စ်ကို ဖျက်ရန် ခွင့်ပြုချက်မရှိပါ။", show_alert=True)
 
 async def main():
-    print("Bot စတင်ပွင့်နေပါပြီ...")
     await dp.start_polling(bot)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
