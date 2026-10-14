@@ -5,8 +5,8 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Token အမှန်ကို ထည့်သွင်းထားပါသည်
-TOKEN = "8613893374:AAGfwCfV59rMytI7QAgqIIysImlOXQt1J-I"
+# BotFather ဆီက ရလာတဲ့ Token အသစ်ကို ဒီကွင်းစကွင်းပိတ်ကြားထဲမှာ ထည့်ပါ
+TOKEN = "8613893374:AAGfwCfV59rMytI7QAgqIIysImlOXQt1J-I" 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -62,11 +62,10 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
                     
-                    # Safe score 0.99 အောက်နည်းလျှင် သို့ nudity အနည်းငယ်ပါလျှင် တားမည်
                     if safe_score < 0.99 or raw_score > 0.0 or partial_score > 0.0:
                         return True
                 else:
-                    return True # API Error တက်လျှင်လည်း လုံခြုံရေးအရ တားမည်
+                    return True
     except Exception as e:
         print(f"NSFW File Check Exception: {e}")
         return True
