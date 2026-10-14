@@ -78,7 +78,8 @@ async def handle_text(message: types.Message):
 
     CHANNEL_ID = "@yadanabonfreedom"
     
-    sent_msg = await bot.send_message(chat_id=CHANNEL_ID, message=text=message.text)
+    # ဤနေရာကို ပြင်ဆင်ထားပါသည် (text=message.text သို့ ပြောင်းထားသည်)
+    sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
