@@ -47,7 +47,7 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine ဖြင့် NSFW / Sex ပုံများကို စစ်ဆေးခြင်း
+# Sightengine ဖြင့် မျှတသော Threshold ဖြင့် စစ်ဆေးခြင်း
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
         return False
@@ -66,14 +66,14 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 print(f"SIGHTENGINE RESPONSE: {res_data}")
                 
                 if res_data.get('status') == 'success':
-                    nudity = res_data.get('nudity', {})
-                    safe_score = nudity.get('safe', 1.0)
-                    raw_score = nudity.get('raw', 0.0)
-                    partial_score = nudity.get('partial', 0.0)
-                    suggestive_score = nudity.get('suggestive', 0.0)
+                    nudity = data.get('nudity', {}) # safe check
+                    res_nudity = res_data.get('nudity', {})
+                    safe_score = res_nudity.get('safe', 1.0)
+                    raw_score = res_nudity.get('raw', 0.0)
+                    partial_score = res_nudity.get('partial', 0.0)
                     
-                    # မျှတသော သတ်မှတ်ချက် (ရိုးရိုးပုံများကို လွတ်စေပြီး အပြာပုံ/ကာတွန်းအပြာများကို ဖမ်းမည်)
-                    if safe_score < 0.7 or raw_score > 0.15 or partial_score > 0.2 or suggestive_score > 0.35:
+                    # 0.5 နှုန်းထားဖြင့် မျှတစွာ စစ်ဆေးခြင်း (Safe < 0.5 သို့မဟုတ် Raw > 0.5 ဆိုလျှင် တားမည်)
+                    if safe_score < 0.5 or raw_score > 0.5 or partial_score > 0.6:
                         return True
                 else:
                     return False
