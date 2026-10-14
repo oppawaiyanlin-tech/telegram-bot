@@ -104,7 +104,7 @@ async def handle_photo(message: types.Message):
         await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
         return
 
-    CHANNEL_ID = "@yadanabonfreedom"
+    CHANNEL_ID = "@ydbumailbox"
     
     sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=message.caption)
 
