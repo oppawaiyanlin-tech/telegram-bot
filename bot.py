@@ -3,9 +3,11 @@ import os
 import io
 import uuid
 import asyncio
-import aiohttp
+import time
 
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+
+import aiohttp
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher, F, types
@@ -37,12 +39,12 @@ if not all([
     SIGHTENGINE_WORKFLOW_ID,
 ]):
     raise RuntimeError(
-        "Sightengine API User, API Secret or Workflow ID is missing!"
+        "Sightengine API credentials or Workflow ID are missing!"
     )
 
 
 # =========================================================
-# 2. BOT AND DISPATCHER
+# 2. BOT SETUP
 # =========================================================
 
 session = AiohttpSession(timeout=60)
@@ -51,16 +53,16 @@ dp = Dispatcher()
 
 
 # =========================================================
-# 3. ALBUM AND DELETE STORAGE
+# 3. ALBUM STORAGE
 # =========================================================
 
 album_cache: Dict[str, List[types.Message]] = {}
 album_locks: Dict[str, asyncio.Lock] = {}
 album_tasks: Dict[str, asyncio.Task] = {}
+album_last_seen: Dict[str, float] = {}
 
-# Callback data must remain within Telegram's 64-byte limit.
-# Store message IDs on the server instead of placing all IDs
-# directly inside callback_data.
+# Album deletion IDs are stored server-side so that
+# callback_data stays within Telegram's size limit.
 delete_groups: Dict[str, List[int]] = {}
 
 
@@ -69,17 +71,19 @@ delete_groups: Dict[str, List[int]] = {}
 # =========================================================
 
 BAD_WORDS = [
-    "လီး", "စက်ပက်", "စောက်ဖုတ်", "စောက်ဖုတ်ပြဲမ", "မသာမ",
-    "ဖာသည်မ", "မအေလိုး", "ခွေးမသား", "လီးပဲ", "ကိုယ်မေကိုလိုး",
-    "နှမလိုး", "ငါလိုးမသား", "မင်းညီမငါလိုး", "မင်းအမေငါလိုး",
-    "တစ်ဆွေလုံးတစ်မျိုးလုံးငါလိုး", "kmkl", "mal", "lee", "leee",
-    "leeee", "စပ", "ခွေးတတောင်းစားမ", "လီးစုပ်", "မှုတ်ပေး",
-    "စမူ", "စောက်ပက်", "ခွေးလိုးမသား", "လိုးမလား", "လိုးမယ်",
-    "လိုးချင်တယ်", "ကုန်းပေးမယ်", "ဖင်ချ", "ဖင်ခံ", "ဖင်လိုး",
-    "စောက်စိ", "စောက်ချီး", "ချီးပဲ", "လပြွတ်ပဲ", "လဥပဲ",
-    "လီးတောင်နေတယ်", "လချီး", "ဂွေးဥ", "ဂွေးစိ",
-    "နို့စို့ချင်တယ်", "နို့ကိုင်ချင်တယ်", "fuck", "shit",
-    "bitch", "asshole",
+    "လီး", "စက်ပက်", "စောက်ဖုတ်", "စောက်ဖုတ်ပြဲမ",
+    "မသာမ", "ဖာသည်မ", "မအေလိုး", "ခွေးမသား",
+    "လီးပဲ", "ကိုယ်မေကိုလိုး", "နှမလိုး", "ငါလိုးမသား",
+    "မင်းညီမငါလိုး", "မင်းအမေငါလိုး",
+    "တစ်ဆွေလုံးတစ်မျိုးလုံးငါလိုး", "kmkl", "mal",
+    "lee", "leee", "leeee", "စပ", "ခွေးတတောင်းစားမ",
+    "လီးစုပ်", "မှုတ်ပေး", "စမူ", "စောက်ပက်",
+    "ခွေးလိုးမသား", "လိုးမလား", "လိုးမယ်",
+    "လိုးချင်တယ်", "ကုန်းပေးမယ်", "ဖင်ချ", "ဖင်ခံ",
+    "ဖင်လိုး", "စောက်စိ", "စောက်ချီး", "ချီးပဲ",
+    "လပြွတ်ပဲ", "လဥပဲ", "လီးတောင်နေတယ်", "လချီး",
+    "ဂွေးဥ", "ဂွေးစိ", "နို့စို့ချင်တယ်",
+    "နို့ကိုင်ချင်တယ်", "fuck", "shit", "bitch", "asshole",
 ]
 
 
@@ -87,10 +91,10 @@ def find_bad_word(text: Optional[str]) -> Optional[str]:
     if not text:
         return None
 
-    text_lower = text.lower()
+    lowered = text.lower()
 
     for word in BAD_WORDS:
-        if word.lower() in text_lower:
+        if word.lower() in lowered:
             return word
 
     return None
@@ -120,17 +124,17 @@ async def start_web_server():
 
 
 # =========================================================
-# 6. SIGHTENGINE WORKFLOW MODERATION
+# 6. SIGHTENGINE WORKFLOW
 # =========================================================
 
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     """
-    True  = Block the image.
-    False = Workflow explicitly accepted the image.
+    Returns:
+        True  -> Block image
+        False -> Workflow explicitly accepted image
 
-    Uses Sightengine Workflow only.
-    API errors, unknown actions and workflow mismatches
-    are blocked by default.
+    Uses the configured Sightengine Workflow only.
+    API failures and unknown actions fail closed.
     """
 
     url = "https://api.sightengine.com/1.0/check-workflow.json"
@@ -151,7 +155,6 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
     try:
         async with aiohttp.ClientSession(timeout=timeout) as api_session:
             async with api_session.post(url, data=data) as response:
-
                 response_text = await response.text()
 
                 print("Sightengine HTTP status:", response.status)
@@ -159,56 +162,36 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 if response.status != 200:
                     print(
                         "Sightengine HTTP error:",
-                        response_text[:1500],
+                        response_text[:1000],
                     )
                     return True
 
                 try:
-                    result = await response.json(
-                        content_type=None
-                    )
+                    result = await response.json(content_type=None)
                 except (ValueError, aiohttp.ContentTypeError):
                     print("Sightengine returned invalid JSON.")
                     return True
 
                 if result.get("status") != "success":
-                    # Do not print API credentials.
                     print(
-                        "Sightengine API failure:",
-                        result.get("error", "Unknown API error"),
-                    )
-                    return True
-
-                workflow_info = result.get("workflow") or {}
-                returned_workflow_id = workflow_info.get("id")
-
-                # Verify that the configured Workflow was used.
-                if returned_workflow_id != SIGHTENGINE_WORKFLOW_ID:
-                    print("Sightengine Workflow ID mismatch.")
-                    print(
-                        "Returned workflow ID:",
-                        returned_workflow_id,
+                        "Sightengine API error:",
+                        result.get("error", "Unknown error"),
                     )
                     return True
 
                 summary = result.get("summary")
 
                 if not isinstance(summary, dict):
-                    print("Sightengine response has no valid summary.")
+                    print("Sightengine response has no summary.")
                     return True
 
                 action = summary.get("action")
 
-                print("Sightengine Workflow:", returned_workflow_id)
-                print("Sightengine action:", action)
-                print(
-                    "Reject probability:",
-                    summary.get("reject_prob"),
-                )
-                print(
-                    "Reject reasons:",
-                    summary.get("reject_reason"),
-                )
+                print("Sightengine workflow action:", action)
+                print("Sightengine reject probability:",
+                      summary.get("reject_prob"))
+                print("Sightengine reject reasons:",
+                      summary.get("reject_reason"))
 
                 if action == "accept":
                     return False
@@ -216,7 +199,6 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 if action == "reject":
                     return True
 
-                # Missing or unknown action: block by default.
                 print("Unknown Workflow action; blocking image.")
                 return True
 
@@ -233,19 +215,13 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
         return True
 
 
-# =========================================================
-# 7. MODERATION HELPER
-# =========================================================
-
 async def moderate_photo(message: types.Message) -> bool:
-    """
-    Returns True only when the image is explicitly accepted.
-    """
-
-    if not message.photo:
-        return False
+    """Return True only if Workflow accepts the image."""
 
     try:
+        if not message.photo:
+            return False
+
         photo = message.photo[-1]
         file_io = io.BytesIO()
 
@@ -257,7 +233,6 @@ async def moderate_photo(message: types.Message) -> bool:
             return False
 
         blocked = await check_nsfw_file(file_bytes)
-
         return not blocked
 
     except Exception as error:
@@ -266,7 +241,7 @@ async def moderate_photo(message: types.Message) -> bool:
 
 
 # =========================================================
-# 8. START COMMAND
+# 7. START COMMAND
 # =========================================================
 
 @dp.message(F.text == "/start")
@@ -279,27 +254,34 @@ async def handle_start(message: types.Message):
     )
 
 
-# =========================================================
-# 9. OTHER COMMANDS
-# =========================================================
-
 @dp.message(F.text.startswith("/"))
 async def handle_other_commands(message: types.Message):
     return
 
 
 # =========================================================
-# 10. ALBUM COLLECTION
+# 8. ALBUM PROCESSING
 # =========================================================
 
 async def process_album_after_delay(media_group_id: str):
     """
-    Wait briefly to collect album messages, then moderate
-    every photo before publishing any of them.
+    Collect all album messages until no new item arrives
+    for 2 seconds, then moderate and publish the entire album.
     """
 
     try:
-        await asyncio.sleep(2.0)
+        loop = asyncio.get_running_loop()
+
+        while True:
+            await asyncio.sleep(0.5)
+
+            last_seen = album_last_seen.get(media_group_id)
+
+            if last_seen is None:
+                return
+
+            if loop.time() - last_seen >= 2.0:
+                break
 
         lock = album_locks.get(media_group_id)
 
@@ -312,45 +294,61 @@ async def process_album_after_delay(media_group_id: str):
         if not messages:
             return
 
-        messages.sort(key=lambda item: item.message_id)
+        messages.sort(key=lambda m: m.message_id)
 
+        # Get caption from whichever album item contains it.
         caption_text = next(
-            (item.caption for item in messages if item.caption),
+            (m.caption for m in messages if m.caption),
             "",
         )
 
+        # Reject inappropriate caption text.
         matched_word = find_bad_word(caption_text)
 
         if matched_word:
             await messages[0].reply(
                 f"⚠️ စာထဲတွင် မသင့်လျော်သော စာသား "
-                f"ဥပမာ '{matched_word}' ပါဝင်နေသဖြင့် "
-                f"တင်၍မရပါ။"
+                f"'{matched_word}' ပါဝင်နေသဖြင့် "
+                f"Album ကို မတင်ပါ။"
             )
             return
 
-        # Check the whole album before publishing anything.
-        for msg in messages:
+        # Telegram media groups support up to 10 items.
+        if len(messages) > 10:
+            await messages[0].reply(
+                "⚠️ Album တစ်ခုတွင် ပုံ ၁၀ ပုံထက် "
+                "ပိုနေပါသည်။ Album တစ်ခုလျှင် ပုံ ၁၀ ပုံအထိသာ "
+                "တင်နိုင်ပါသည်။"
+            )
+            return
+
+        # Moderate every photo before publishing any photo.
+        for index, msg in enumerate(messages, start=1):
+            print(
+                f"Checking album {media_group_id}: "
+                f"image {index}/{len(messages)}"
+            )
+
             accepted = await moderate_photo(msg)
 
             if not accepted:
                 await messages[0].reply(
-                    "⚠️ Album ထဲမှ ပုံတစ်ပုံ သို့မဟုတ် "
-                    "တစ်ပုံထက်ပိုသောပုံများကို Workflow က "
-                    "လက်မခံပါ။ သို့မဟုတ် စစ်ဆေးမှု မအောင်မြင်ပါ။ "
+                    "⚠️ Album ထဲမှ ပုံတစ်ပုံကို Workflow က "
+                    "Reject လုပ်ထားပါသည်၊ သို့မဟုတ် "
+                    "စစ်ဆေးမှု မအောင်မြင်ပါ။ "
                     "Album တစ်ခုလုံးကို Channel သို့ မတင်ပါ။"
                 )
                 return
 
+        # Send all images together as one Telegram album.
+        # Put the caption on the first media item only.
         media_list = []
 
         for index, msg in enumerate(messages):
-            caption = caption_text if index == 0 else None
-
             media_list.append(
                 InputMediaPhoto(
                     media=msg.photo[-1].file_id,
-                    caption=caption,
+                    caption=caption_text if index == 0 else None,
                 )
             )
 
@@ -377,19 +375,40 @@ async def process_album_after_delay(media_group_id: str):
         )
 
         await messages[0].reply(
-            "✅ Workflow စစ်ဆေးမှု အောင်မြင်ပြီး "
-            "Album ကို Channel သို့ တင်ပြီးပါပြီ။",
+            f"✅ ပုံ {len(messages)} ပုံနှင့် Caption စာသားကို "
+            "Workflow စစ်ဆေးပြီး Channel သို့ "
+            "Album အဖြစ် တင်ပြီးပါပြီ။",
             reply_markup=keyboard,
         )
 
     except Exception as error:
-        print("Album processing error:", repr(error))
+        print(
+            f"Album processing error ({media_group_id}): "
+            f"{error!r}"
+        )
+
+        # Preserve a reference for user notification.
+        messages = album_cache.get(media_group_id, [])
+
+        if messages:
+            try:
+                await messages[0].reply(
+                    "⚠️ Album တင်ရာတွင် Error ဖြစ်နေပါသည်။ "
+                    "Render Logs ကို စစ်ဆေးပေးပါ။"
+                )
+            except Exception:
+                pass
 
     finally:
         album_cache.pop(media_group_id, None)
+        album_last_seen.pop(media_group_id, None)
         album_locks.pop(media_group_id, None)
         album_tasks.pop(media_group_id, None)
 
+
+# =========================================================
+# 9. PHOTO AND ALBUM HANDLER
+# =========================================================
 
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
@@ -400,17 +419,19 @@ async def handle_photo(message: types.Message):
 
     if message.media_group_id:
         group_id = message.media_group_id
+        loop = asyncio.get_running_loop()
 
         if group_id not in album_cache:
             album_cache[group_id] = []
             album_locks[group_id] = asyncio.Lock()
 
-        lock = album_locks[group_id]
-
-        async with lock:
+        async with album_locks[group_id]:
             album_cache[group_id].append(message)
 
-            # Start one collection task per album.
+            # Update the time whenever an album item arrives.
+            album_last_seen[group_id] = loop.time()
+
+            # Create only one collector task for each album.
             if group_id not in album_tasks:
                 album_tasks[group_id] = asyncio.create_task(
                     process_album_after_delay(group_id)
@@ -423,14 +444,12 @@ async def handle_photo(message: types.Message):
     # -----------------------------------------------------
 
     caption_text = message.caption or ""
-
     matched_word = find_bad_word(caption_text)
 
     if matched_word:
         await message.reply(
             f"⚠️ စာထဲတွင် မသင့်လျော်သော စာသား "
-            f"ဥပမာ '{matched_word}' ပါဝင်နေသဖြင့် "
-            f"တင်၍မရပါ။"
+            f"'{matched_word}' ပါဝင်နေသဖြင့် မတင်ပါ။"
         )
         return
 
@@ -438,9 +457,8 @@ async def handle_photo(message: types.Message):
 
     if not accepted:
         await message.reply(
-            "⚠️ ပုံကို Sightengine Workflow က Reject လုပ်ထားပါသည် "
-            "သို့မဟုတ် စစ်ဆေးမှု မအောင်မြင်ပါ။ "
-            "Channel သို့ မတင်ထားပါ။"
+            "⚠️ Workflow က ပုံကို လက်မခံပါ၊ သို့မဟုတ် "
+            "စစ်ဆေးမှု မအောင်မြင်ပါ။ Channel သို့ မတင်ထားပါ။"
         )
         return
 
@@ -471,13 +489,13 @@ async def handle_photo(message: types.Message):
     except Exception as error:
         print("Single photo publishing error:", repr(error))
         await message.reply(
-            "⚠️ Channel သို့ တင်မရပါ။ "
-            "Bot Admin Permission နှင့် Logs ကို စစ်ဆေးပါ။"
+            "⚠️ ပုံကို Channel သို့ တင်မရပါ။ "
+            "Render Logs နှင့် Bot Admin Permission ကို စစ်ပါ။"
         )
 
 
 # =========================================================
-# 11. TEXT MESSAGES
+# 10. TEXT MESSAGE HANDLER
 # =========================================================
 
 @dp.message(F.text)
@@ -491,8 +509,7 @@ async def handle_text(message: types.Message):
     if matched_word:
         await message.reply(
             f"⚠️ စာထဲတွင် မသင့်လျော်သော စာသား "
-            f"ဥပမာ '{matched_word}' ပါဝင်နေသဖြင့် "
-            f"တင်၍မရပါ။"
+            f"'{matched_word}' ပါဝင်နေသဖြင့် မတင်ပါ။"
         )
         return
 
@@ -514,20 +531,20 @@ async def handle_text(message: types.Message):
         )
 
         await message.reply(
-            "✅ ပို့စ်ကို Channel သို့ တင်ပြီးပါပြီ။",
+            "✅ စာသားကို Channel သို့ တင်ပြီးပါပြီ။",
             reply_markup=keyboard,
         )
 
     except Exception as error:
         print("Text publishing error:", repr(error))
         await message.reply(
-            "⚠️ Channel သို့ တင်မရပါ။ "
-            "Bot Admin Permission နှင့် Logs ကို စစ်ဆေးပါ။"
+            "⚠️ စာသားကို Channel သို့ တင်မရပါ။ "
+            "Render Logs နှင့် Bot Admin Permission ကို စစ်ပါ။"
         )
 
 
 # =========================================================
-# 12. DELETE SINGLE CHANNEL POST
+# 11. DELETE SINGLE POST
 # =========================================================
 
 @dp.callback_query(F.data.startswith("delete_"))
@@ -544,22 +561,24 @@ async def process_delete(callback: types.CallbackQuery):
         )
 
         await callback.message.delete()
+
         await callback.answer(
             "🗑 ပို့စ်ကို ဖျက်ပြီးပါပြီ။",
             show_alert=True,
         )
 
     except Exception as error:
-        print("Delete post error:", repr(error))
+        print("Delete single post error:", repr(error))
+
         await callback.answer(
-            "⚠️ ပို့စ်ဖျက်မရပါ။ "
-            "ဖျက်ပြီးသားဖြစ်နိုင်သလို Permission လည်း စစ်ပါ။",
+            "⚠️ ပို့စ်ကို ဖျက်မရပါ။ "
+            "ဖျက်ပြီးသားဖြစ်နိုင်သလို Permission ကိုလည်း စစ်ပါ။",
             show_alert=True,
         )
 
 
 # =========================================================
-# 13. DELETE WHOLE ALBUM
+# 12. DELETE WHOLE ALBUM
 # =========================================================
 
 @dp.callback_query(F.data.startswith("deletegroup_"))
@@ -609,7 +628,7 @@ async def process_delete_group(callback: types.CallbackQuery):
 
 
 # =========================================================
-# 14. MAIN
+# 13. MAIN
 # =========================================================
 
 async def main():
@@ -624,7 +643,6 @@ async def main():
         await dp.start_polling(bot)
 
     finally:
-        # Close bot HTTP session when polling stops.
         await bot.session.close()
 
 
