@@ -47,10 +47,10 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine ဖြင့် မျှတသော Threshold ဖြင့် စစ်ဆေးခြင်း
+# Sex ပုံမှန်သမျှ လုံးဝမလွတ်စေရန် အလွန်တင်းကျပ်စွာ စစ်ဆေးမည့် လုပ်ဆောင်ချက်
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
-        return False
+        return True # API Key မရှိပါက လုံခြုံရေးအရ တားဆီးမည်
         
     try:
         url = 'https://api.sightengine.com/1.0/check.json'
@@ -66,20 +66,27 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 print(f"SIGHTENGINE RESPONSE: {res_data}")
                 
                 if res_data.get('status') == 'success':
-                    nudity = data.get('nudity', {}) # safe check
-                    res_nudity = res_data.get('nudity', {})
-                    safe_score = res_nudity.get('safe', 1.0)
-                    raw_score = res_nudity.get('raw', 0.0)
-                    partial_score = res_nudity.get('partial', 0.0)
+                    nudity = res_data.get('nudity', {})
+                    safe_score = nudity.get('safe', 1.0)
+                    raw_score = nudity.get('raw', 0.0)
+                    partial_score = nudity.get('partial', 0.0)
+                    suggestive_score = nudity.get('suggestive', 0.0)
+                    sexual_activity = nudity.get('sexual_activity', 0.0)
+                    sexual_display = nudity.get('sexual_display', 0.0)
                     
-                    # 0.5 နှုန်းထားဖြင့် မျှတစွာ စစ်ဆေးခြင်း (Safe < 0.5 သို့မဟုတ် Raw > 0.5 ဆိုလျှင် တားမည်)
-                    if safe_score < 0.5 or raw_score > 0.5 or partial_score > 0.6:
+                    # အလွန်တင်းကျပ်သော သတ်မှတ်ချက် (Sex / Nude ပုံများကို ချက်ချင်းဖမ်းမည်)
+                    if (safe_score < 0.90 or 
+                        raw_score > 0.01 or 
+                        partial_score > 0.03 or 
+                        suggestive_score > 0.10 or 
+                        sexual_activity > 0.01 or 
+                        sexual_display > 0.01):
                         return True
                 else:
-                    return False
+                    return True # API Error ဖြစ်လျှင်တောင် လုံခြုံရေးအရ တားဆီးမည်
     except Exception as e:
         print(f"NSFW File Check Exception: {e}")
-        return False
+        return True # Exception တက်လျှင်လည်း တားဆီးမည်
         
     return False
 
