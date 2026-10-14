@@ -127,7 +127,7 @@ async def handle_photo(message: types.Message):
                 await messages[0].reply(f"⚠️ စာထဲတွင် မိုက်ရိုင်းသော စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်၍မရပါ။")
                 return
 
-            # ၂။ Album ထဲမှ ပုံများကို NSFW စစ်ဆေးခြင်း
+            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို NSFW သေချာစစ်ဆေးခြင်း
             media_list = []
             for idx, msg in enumerate(messages):
                 photo = msg.photo[-1]
@@ -137,7 +137,7 @@ async def handle_photo(message: types.Message):
                 
                 is_nsfw = await check_nsfw_file(file_bytes)
                 if is_nsfw:
-                    await msg.reply("⚠️ တင်ပြလာသော ပုံများတွင် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် တင်၍မရပါ။")
+                    await messages[0].reply("⚠️ တင်ပြလာသော ပုံများထဲတွင် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
                     return
                 
                 # ပထမဆုံးပုံမှာ ရှာတွေ့ထားတဲ့ Caption ကို ထည့်ပေးရန်
