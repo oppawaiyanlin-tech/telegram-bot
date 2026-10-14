@@ -1,7 +1,7 @@
 import os
 import asyncio
 from aiohttp import web
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = "8836515568:AAFrcGRN_r3Es_FCv1b4At7hgACarRpMN4U"
@@ -22,20 +22,26 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-@dp.message_handler(content_types=['photo', 'video', 'text'])
-async def handle_submission(message: types.Message):
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("🗑 ဖျက်မည်", callback_data="delete_post"))
+# Aiogram v3 ပုံစံ Message Handler
+@dp.message(F.photo)
+async def handle_photo(message: types.Message):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 ဖျက်မည်", callback_data="delete_post")]
+    ])
     CHANNEL_ID = "@yadanabonfreedom"
+    await bot.send_photo(chat_id=CHANNEL_ID, photo=message.photo[-1].file_id, caption=message.caption, reply_markup=keyboard)
+    await message.reply("✅ ပို့စ်တင်ပြီးပါပြီ။", reply_markup=keyboard)
 
-    if message.photo:
-        await bot.send_photo(chat_id=CHANNEL_ID, photo=message.photo[-1].file_id, caption=message.caption, reply_markup=keyboard)
-        await message.reply("✅ ပို့စ်တင်ပြီးပါပြီ။", reply_markup=keyboard)
-    elif message.text:
-        await bot.send_message(chat_id=CHANNEL_ID, text=message.text, reply_markup=keyboard)
-        await message.reply("✅ ပို့စ်တင်ပြီးပါပြီ။", reply_markup=keyboard)
+@dp.message(F.text)
+async def handle_text(message: types.Message):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 ဖျက်မည်", callback_data="delete_post")]
+    ])
+    CHANNEL_ID = "@yadanabonfreedom"
+    await bot.send_message(chat_id=CHANNEL_ID, text=message.text, reply_markup=keyboard)
+    await message.reply("✅ ပို့စ်တင်ပြီးပါပြီ။", reply_markup=keyboard)
 
-@dp.callback_query_handler(lambda c: c.data == 'delete_post')
+@dp.callback_query(F.data == "delete_post")
 async def process_delete(callback_query: types.CallbackQuery):
     try:
         await bot.delete_message(chat_id=callback_query.message.chat.id, message_id=callback_query.message.message_id)
