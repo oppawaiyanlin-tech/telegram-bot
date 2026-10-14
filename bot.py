@@ -80,7 +80,7 @@ async def handle_photo(message: types.Message):
     caption_text = message.caption or ""
     matched_word = find_bad_word(caption_text)
     if matched_word:
-        await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
+        await message.reply(f"⚠️ စာထဲမှာ မိုက်ရိုင်းတဲ့စာသား  ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
     photo = message.photo[-1]
