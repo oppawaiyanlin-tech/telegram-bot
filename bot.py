@@ -45,7 +45,7 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# ရိုးရိုးပုံနဲ့ ကာတွန်းပုံများကို ခွင့်ပြုပြီး Sex ပုံစစ်စစ်များကိုသာ တားဆီးမည့် မျှတသော စစ်ဆေးချက်
+# ကာတွန်းပုံများနှင့် Sex ပုံစံများကိုပါ တိကျစွာဖမ်းမည့် စစ်ဆေးချက်
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
         return False
@@ -68,9 +68,10 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     safe_score = nudity.get('safe', 1.0)
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
+                    suggestive_score = nudity.get('suggestive', 0.0)
                     
-                    # မျှတသော သတ်မှတ်ချက် (ရိုးရိုးပုံ/ကာတွန်းများကို လွတ်စေပြီး အပြာပုံများကိုသာ ဖမ်းမည်)
-                    if safe_score < 0.35 or raw_score > 0.75 or partial_score > 0.85:
+                    # ကာတွန်းပုံများပါမကျန် လိင်ပိုင်းဆိုင်ရာ သံသယရှိသည်များကို တားဆီးရန်
+                    if safe_score < 0.7 or raw_score > 0.15 or partial_score > 0.2 or suggestive_score > 0.35:
                         return True
                 else:
                     return False
@@ -130,7 +131,7 @@ async def handle_photo(message: types.Message):
                 await messages[0].reply(f"⚠️ စာထဲတွင် မိုက်ရိုင်းသော စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်၍မရပါ။")
                 return
 
-            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို NSFW စစ်ဆေးခြင်း
+            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို NSFW သေချာစစ်ဆေးခြင်း
             media_list = []
             for idx, msg in enumerate(messages):
                 photo = msg.photo[-1]
@@ -147,7 +148,7 @@ async def handle_photo(message: types.Message):
                 cap = caption_text if idx == 0 else None
                 media_list.append(InputMediaPhoto(media=photo.file_id, caption=cap))
 
-            CHANNEL_ID = "@ydbumailbox"
+            CHANNEL_ID = "@yadanabonfreedom"
             try:
                 sent_msgs = await bot.send_media_group(chat_id=CHANNEL_ID, media=media_list)
                 
@@ -177,10 +178,10 @@ async def handle_photo(message: types.Message):
         
         is_nsfw = await check_nsfw_file(file_bytes)
         if is_nsfw:
-            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် တင်၍မရပါ။")
+            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
             return
 
-        CHANNEL_ID = "@ydbumailbox"
+        CHANNEL_ID = "@yadanabonfreedom"
         sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=message.caption)
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -202,7 +203,7 @@ async def handle_text(message: types.Message):
         return
 
     try:
-        CHANNEL_ID = "@ydbumailbox"
+        CHANNEL_ID = "@yadanabonfreedom"
         sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -218,7 +219,7 @@ async def handle_text(message: types.Message):
 async def process_delete(callback_query: types.CallbackQuery):
     try:
         target_msg_id = int(callback_query.data.split("_")[1])
-        CHANNEL_ID = "@ydbumailbox"
+        CHANNEL_ID = "@yadanabonfreedom"
         
         await bot.delete_message(chat_id=CHANNEL_ID, message_id=target_msg_id)
         await callback_query.message.delete()
@@ -232,7 +233,7 @@ async def process_delete_group(callback_query: types.CallbackQuery):
     try:
         msg_ids_str = callback_query.data.split("_")[1]
         msg_ids = [int(i) for i in msg_ids_str.split(",")]
-        CHANNEL_ID = "@ydbumailbox"
+        CHANNEL_ID = "@yadanabonfreedom"
         
         for m_id in msg_ids:
             try:
