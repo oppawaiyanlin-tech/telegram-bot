@@ -5,11 +5,12 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOKEN = "8682928993:AAH6bXDFC_RUKMGMteWQalkx4IrZn839JcI"
+# Token အသစ်ကို ထည့်သွင်းထားပါသည်
+TOKEN = "8993727666:AAGbcfOUdLJv_p8Uqm0WiZH6l78SeSC8axM"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Sightengine API Credentials (ကိုကို့ရဲ့ Key များကို တိုက်ရိုက်ထည့်သွင်းထားပါသည်)
+# Sightengine API Credentials
 SIGHTENGINE_API_USER = "1243376243"
 SIGHTENGINE_API_SECRET = "44FbxJmUhnuP8a5sCD3yfQJeZm6CQrSa"
 
@@ -40,10 +41,16 @@ async def check_nsfw(file_url: str) -> bool:
             data = await resp.json()
             if data.get('status') == 'success':
                 nudity = data.get('nudity', {})
-                # safe ရာခိုင်နှုန်း 0.6 ထက် နည်းပါက ညစ်ညမ်းသည်ဟု သတ်မှတ်မည်
                 if nudity.get('safe', 1.0) < 0.6:  
                     return True
     return False
+
+# /start ကဲ့သို့ Command များကို တုန့်ပြန်ရန်
+@dp.message(F.text.startswith("/"))
+async def handle_commands(message: types.Message):
+    if message.text == "/start":
+        await message.reply("မင်္ဂလာပါရှင့်။ ဤဘော့တ်မှတဆင့် Channel သို့ ပုံနှင့် စာများကို တင်နိုင်ပါသည်။")
+    return
 
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
@@ -51,7 +58,7 @@ async def handle_photo(message: types.Message):
     file = await bot.get_file(photo.file_id)
     file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
     
-    # ညစ်ညမ်းမှု ရှိမရှိ စစ်ဆေးမည်
+    # ညစ်ညမ်းမှု စစ်ဆေးမည်
     is_nsfw = await check_nsfw(file_url)
     if is_nsfw:
         await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
@@ -59,10 +66,8 @@ async def handle_photo(message: types.Message):
 
     CHANNEL_ID = "@yadanabonfreedom"
     
-    # Channel (Page) ထဲသို့ တင်မည် (ခလုတ်မပါ)
     sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=message.caption)
 
-    # User ဆီသို့ ပို့မည့် Reply ထဲတွင် ဖျက်ရန် ခလုတ်ထည့်မည်
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
     ])
@@ -70,6 +75,9 @@ async def handle_photo(message: types.Message):
 
 @dp.message(F.text)
 async def handle_text(message: types.Message):
+    if message.text.startswith("/"):
+        return
+
     CHANNEL_ID = "@yadanabonfreedom"
     
     sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
