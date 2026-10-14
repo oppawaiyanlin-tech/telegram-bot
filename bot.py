@@ -11,7 +11,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMedia
 TOKEN = os.environ.get("BOT_TOKEN")
 SIGHTENGINE_API_USER = os.environ.get("SIGHTENGINE_API_USER")
 SIGHTENGINE_API_SECRET = os.environ.get("SIGHTENGINE_API_SECRET")
-SIGHTENGINE_WORKFLOW_ID = os.environ.get("SIGHTENGINE_WORKFLOW_ID")
 
 # Network ချိတ်ဆက်မှု Timeout နဲ့ Error များကို ကြံ့ခိုင်စေရန် Session တည်ဆောက်ခြင်း
 session = AiohttpSession(timeout=60)
@@ -48,33 +47,40 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine Workflow ဖြင့် စစ်ဆေးခြင်း (Dashboard ဘက်က ဆုံးဖြတ်ချက်ကို ယူသုံးမည်)
+# Sightengine ၏ nudity-2.1 မော်ဒယ်ကို အသုံးပြု၍ တိကျခိုင်မာစွာ စစ်ဆေးခြင်း
 async def check_nsfw_file(file_bytes: bytes) -> bool:
-    if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET or not SIGHTENGINE_WORKFLOW_ID:
+    if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
         return False
         
     try:
-        url = 'https://api.sightengine.com/1.0/workflows/run.json'
+        url = 'https://api.sightengine.com/1.0/check.json'
         data = aiohttp.FormData()
         data.add_field('media', file_bytes, filename='photo.jpg', content_type='image/jpeg')
-        data.add_field('workflow', SIGHTENGINE_WORKFLOW_ID)
+        data.add_field('models', 'nudity-2.1')
         data.add_field('api_user', SIGHTENGINE_API_USER)
         data.add_field('api_secret', SIGHTENGINE_API_SECRET)
 
         async with aiohttp.ClientSession() as session_api:
             async with session_api.post(url, data=data) as response:
                 res_data = await response.json()
-                print(f"SIGHTENGINE WORKFLOW RESPONSE: {res_data}")
+                print(f"SIGHTENGINE RESPONSE: {res_data}")
                 
                 if res_data.get('status') == 'success':
-                    # Sightengine Dashboard ဘက်က action က reject ဖြစ်နေရင် တားမည်
-                    action = res_data.get('summary', {}).get('action')
-                    if action == 'reject':
+                    nudity = res_data.get('nudity', {})
+                    safe_score = nudity.get('safe', 1.0)
+                    raw_score = nudity.get('raw', 0.0)
+                    partial_score = nudity.get('partial', 0.0)
+                    sexual_activity = nudity.get('sexual_activity', 0.0)
+                    sexual_display = nudity.get('sexual_display', 0.0)
+                    
+                    # ဤနေရာတွင် တကယ့် Sex ပုံစံစစ်စစ်များကို ချက်ချင်းဖမ်းမည့် ကိန်းဂဏန်းများ သတ်မှတ်ထားသည်
+                    # raw_score (ကိုယ်တုံးလုံး) သို့မဟုတ် sexual_activity (လိင်ပိုင်းဆိုင်ရာ လှုပ်ရှားမှု) အနည်းငယ်ရှိတာနဲ့ တားမည်
+                    if raw_score > 0.15 or sexual_activity > 0.05 or sexual_display > 0.05 or safe_score < 0.70:
                         return True
                 else:
                     return False
     except Exception as e:
-        print(f"Workflow Check Exception: {e}")
+        print(f"NSFW File Check Exception: {e}")
         return False
         
     return False
@@ -129,7 +135,7 @@ async def handle_photo(message: types.Message):
                 await messages[0].reply(f"⚠️ စာထဲတွင် မိုက်ရိုင်းသော စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်၍မရပါ။")
                 return
 
-            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို Sightengine Workflow ဖြင့် စစ်ဆေးခြင်း
+            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို NSFW စစ်ဆေးခြင်း
             media_list = []
             for idx, msg in enumerate(messages):
                 photo = msg.photo[-1]
@@ -175,7 +181,7 @@ async def handle_photo(message: types.Message):
         
         is_nsfw = await check_nsfw_file(file_bytes)
         if is_nsfw:
-            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် တင်၍မရပါ။")
+            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
             return
 
         sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=message.caption)
