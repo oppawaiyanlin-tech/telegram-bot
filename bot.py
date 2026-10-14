@@ -4,8 +4,8 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Token အသစ်ကို ထည့်သွင်းထားပါသည်
-TOKEN = "8973237805:AAEjMTPFVC8BT6qCKBJkEW274cbYOAgfe2A"
+# Render ထဲက Environment Variable ကနေ Token ကို လုံခြုံစွာ ယူသုံးခြင်း
+TOKEN = os.environ.get("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -78,7 +78,7 @@ async def handle_text(message: types.Message):
 
     CHANNEL_ID = "@yadanabonfreedom"
     
-    sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
+    sent_msg = await bot.send_message(chat_id=CHANNEL_ID, message=text=message.text)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
