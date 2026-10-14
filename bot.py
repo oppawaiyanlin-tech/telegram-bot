@@ -123,7 +123,7 @@ async def handle_text(message: types.Message):
         await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
-    CHANNEL_ID = "@yadanabonfreedom"
+    CHANNEL_ID = "@ydbumailbox"
     
     sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
 
@@ -136,7 +136,7 @@ async def handle_text(message: types.Message):
 async def process_delete(callback_query: types.CallbackQuery):
     try:
         target_msg_id = int(callback_query.data.split("_")[1])
-        CHANNEL_ID = "@yadanabonfreedom"
+        CHANNEL_ID = "@ydbumailbox"
         
         await bot.delete_message(chat_id=CHANNEL_ID, message_id=target_msg_id)
         await callback_query.message.delete()
