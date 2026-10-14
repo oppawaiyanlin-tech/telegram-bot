@@ -1,4 +1,5 @@
 import os
+import io
 import asyncio
 import aiohttp
 from typing import List, Dict
@@ -48,7 +49,7 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine Workflow ဖြင့် အမှားအယွင်းကင်းစင်စွာ စစ်ဆေးခြင်း
+# Sightengine Workflow ဖြင့် ပုံ Bytes များကို တိကျမှန်ကန်စွာ စစ်ဆေးခြင်း
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET or not SIGHTENGINE_WORKFLOW_ID:
         print("Workflow credentials or ID missing!")
@@ -57,7 +58,6 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
     try:
         url = 'https://api.sightengine.com/1.0/workflows/run.json'
         
-        # Multipart form data ကို တိကျခိုင်မာစွာ တည်ဆောက်ခြင်း
         data = aiohttp.FormData()
         data.add_field('media', file_bytes, filename='photo.jpg', content_type='image/jpeg')
         data.add_field('workflow', SIGHTENGINE_WORKFLOW_ID)
@@ -70,19 +70,13 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 print(f"SIGHTENGINE WORKFLOW FULL RESPONSE: {res_data}")
                 
                 if res_data.get('status') == 'success':
-                    # Summary ထဲက action ကို ယူခြင်း
                     summary = res_data.get('summary', {})
                     action = summary.get('action')
                     
                     print(f"Extracted Workflow Action: {action}")
                     
-                    # Workflow က reject လုပ်လျှင် သို့မဟုတ် ရှင်းလင်းစွာ reject ဖြစ်နေလျှင် True ပြန်မည်
+                    # Workflow က reject လုပ်လျှင် True ပြန်မည် (တားမည်)
                     if action == 'reject':
-                        return True
-                        
-                    # ထပ်ဆောင်း အနေဖြင့် တွေ့ရှိချက်များထဲတွင် reject ပါဝင်နေခြင်းရှိမစစ်ဆေးရန်
-                    type_matches = res_data.get('type', {})
-                    if isinstance(type_matches, dict) and type_matches.get('action') == 'reject':
                         return True
                 else:
                     print(f"Workflow API Error Status: {res_data}")
@@ -141,13 +135,13 @@ async def handle_photo(message: types.Message):
                 await messages[0].reply(f"⚠️ စာထဲတွင် မိုက်ရိုင်းသော စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်၍မရပါ။")
                 return
 
-            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို Workflow ဖြင့် စစ်ဆေးခြင်း
+            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို Bytes အဖြစ် ဒေါင်းလုပ်ဆွဲပြီး Workflow ဖြင့် စစ်ဆေးခြင်း
             media_list = []
             for idx, msg in enumerate(messages):
                 photo = msg.photo[-1]
-                file = await bot.get_file(photo.file_id)
-                file_io = await bot.download_file(file.file_path)
-                file_bytes = file_io.read()
+                file_io = io.BytesIO()
+                await bot.download(photo, destination=file_io)
+                file_bytes = file_io.getvalue()
                 
                 is_nsfw = await check_nsfw_file(file_bytes)
                 if is_nsfw:
@@ -181,9 +175,9 @@ async def handle_photo(message: types.Message):
 
     try:
         photo = message.photo[-1]
-        file = await bot.get_file(photo.file_id)
-        file_io = await bot.download_file(file.file_path)
-        file_bytes = file_io.read()
+        file_io = io.BytesIO()
+        await bot.download(photo, destination=file_io)
+        file_bytes = file_io.getvalue()
         
         is_nsfw = await check_nsfw_file(file_bytes)
         if is_nsfw:
