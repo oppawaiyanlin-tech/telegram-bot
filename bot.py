@@ -49,11 +49,11 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine Workflow ဖြင့် ပုံ Bytes များကို တိကျမှန်ကန်စွာ စစ်ဆေးခြင်း
+# Sightengine Workflow ဖြင့် အလွန်တင်းကျပ်စွာ စစ်ဆေးပြီး အမှားတွေ့ပါက လုံးဝပိတ်မည့် စနစ်
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET or not SIGHTENGINE_WORKFLOW_ID:
         print("Workflow credentials or ID missing!")
-        return False
+        return True  # Key မရှိရင် လုံခြုံရေးအရ ပိတ်မည်
         
     try:
         url = 'https://api.sightengine.com/1.0/workflows/run.json'
@@ -75,15 +75,19 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     
                     print(f"Extracted Workflow Action: {action}")
                     
-                    # Workflow က reject လုပ်လျှင် True ပြန်မည် (တားမည်)
+                    # Workflow က reject လုပ်လျှင် သေချာပေါက် တားမည်
                     if action == 'reject':
                         return True
+                    elif action == 'accept':
+                        return False
                 else:
                     print(f"Workflow API Error Status: {res_data}")
+                    return True  # API ဘက်က Status မမှန်ရင် လုံခြုံရေးအရ ပိတ်မည်
     except Exception as e:
         print(f"Workflow Check Exception: {e}")
+        return True  # Exception ဖြစ်ရင်လည်း ပိတ်မည်
         
-    return False
+    return True  # သံသယရှိက လုံခြုံရေးအရ ပိတ်မည်
 
 def find_bad_word(text: str) -> str:
     if not text:
