@@ -5,7 +5,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOKEN = "8836515568:AAFrcGRN_r3Es_FCv1b4At7hgACarRpMN4U"
+TOKEN = "8836515568:AAGY8ulqLPjC0qsO6I5ThxVHfrWCJ2rzS24"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
