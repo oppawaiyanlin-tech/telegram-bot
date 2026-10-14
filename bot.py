@@ -3,6 +3,8 @@ import asyncio
 import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Render ရဲ့ Environment Variables ကနေ လုံခြုံစွာ ယူသုံးခြင်း
@@ -10,7 +12,9 @@ TOKEN = os.environ.get("BOT_TOKEN")
 SIGHTENGINE_API_USER = os.environ.get("SIGHTENGINE_API_USER")
 SIGHTENGINE_API_SECRET = os.environ.get("SIGHTENGINE_API_SECRET")
 
-bot = Bot(token=TOKEN)
+# Network ချိတ်ဆက်မှု Timeout နဲ့ Error များကို ကြံ့ခိုင်စေရန် Session တည်ဆောက်ခြင်း
+session = AiohttpSession(timeout=60)
+bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
 
 BAD_WORDS = [
@@ -50,8 +54,8 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
         data.add_field('api_user', SIGHTENGINE_API_USER)
         data.add_field('api_secret', SIGHTENGINE_API_SECRET)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=data) as response:
+        async with aiohttp.ClientSession() as session_api:
+            async with session_api.post(url, data=data) as response:
                 res_data = await response.json()
                 print(f"FULL SIGHTENGINE RESPONSE: {res_data}")
                 
@@ -94,24 +98,28 @@ async def handle_photo(message: types.Message):
         await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    file_io = await bot.download_file(file.file_path)
-    file_bytes = file_io.read()
-    
-    is_nsfw = await check_nsfw_file(file_bytes)
-    if is_nsfw:
-        await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
-        return
+    try:
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        file_io = await bot.download_file(file.file_path)
+        file_bytes = file_io.read()
+        
+        is_nsfw = await check_nsfw_file(file_bytes)
+        if is_nsfw:
+            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
+            return
 
-    CHANNEL_ID = "@ydbumailbox"
-    
-    sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=message.caption)
+        CHANNEL_ID = "@ydbumailbox"
+        
+        sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=message.caption)
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
-    ])
-    await message.reply("✅ ပို့စ်ကို Channel တင်ပြီးပါပြီ။", reply_markup=keyboard)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
+        ])
+        await message.reply("✅ ပို့စ်ကို Channel တင်ပြီးပါပြီ။", reply_markup=keyboard)
+    except Exception as e:
+        print(f"Photo handle error: {e}")
+        await message.reply("⚠️ ချိတ်ဆက်မှု ခဏတာ အားနည်းသွားပါသဖြင့် ကျေးဇူးပြု၍ တစ်ချက်လောက် ထပ်ပို့ပေးပါရှင့်။")
 
 @dp.message(F.text)
 async def handle_text(message: types.Message):
@@ -123,14 +131,18 @@ async def handle_text(message: types.Message):
         await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
-    CHANNEL_ID = "@ydbumailbox"
-    
-    sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
+    try:
+        CHANNEL_ID = "@ydbumailbox"
+        
+        sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
-    ])
-    await message.reply("✅ ပို့စ်ကို Channel တင်ပြီးပါပြီ။", reply_markup=keyboard)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
+        ])
+        await message.reply("✅ ပို့စ်ကို Channel တင်ပြီးပါပြီ။", reply_markup=keyboard)
+    except Exception as e:
+        print(f"Text handle error: {e}")
+        await message.reply("⚠️ ချိတ်ဆက်မှု ခဏတာ အားနည်းသွားပါသဖြင့် ကျေးဇူးပြု၍ တစ်ချက်လောက် ထပ်ပို့ပေးပါရှင့်။")
 
 @dp.callback_query(F.data.startswith("delete_"))
 async def process_delete(callback_query: types.CallbackQuery):
