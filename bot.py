@@ -5,14 +5,13 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# BotFather ဆီက ရလာတဲ့ Token အသစ်ကို ဒီကွင်းစကွင်းပိတ်ကြားထဲမှာ ထည့်ပါ
-TOKEN = "8613893374:AAGfwCfV59rMytI7QAgqIIysImlOXQt1J-I" 
+# Render ရဲ့ Environment Variables ကနေ လုံခြုံစွာ ယူသုံးခြင်း
+TOKEN = os.environ.get("BOT_TOKEN")
+SIGHTENGINE_API_USER = os.environ.get("SIGHTENGINE_API_USER")
+SIGHTENGINE_API_SECRET = os.environ.get("SIGHTENGINE_API_SECRET")
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
-# Sightengine API Credentials
-SIGHTENGINE_API_USER = "1243376243"
-SIGHTENGINE_API_SECRET = "44FbxJmUhnuP8a5sCD3yfQJeZm6CQrSa"
 
 BAD_WORDS = [
     "လီး", "စက်ပက်", "စောက်ဖုတ်", "စောက်ဖုတ်ပြဲမ", "မသာမ", "ဖာသည်မ", 
@@ -95,7 +94,6 @@ async def handle_photo(message: types.Message):
         await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
-    # Telegram မှ ပုံကို Bytes အဖြစ် ရယူခြင်း
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
     file_io = await bot.download_file(file.file_path)
