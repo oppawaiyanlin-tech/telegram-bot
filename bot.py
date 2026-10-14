@@ -47,7 +47,7 @@ def find_bad_word(text: str) -> str:
             return word
     return None
 
-# Sightengine သို့ ဖိုင်ပုံစံ (Bytes) ဖြင့် ပို့၍ NSFW တင်းကြပ်စွာ စစ်ဆေးခြင်း
+# Sightengine ဖြင့် ပုံကို သေချာတိကျစွာ စစ်ဆေးခြင်း
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_USER or not SIGHTENGINE_SECRET:
         return False
@@ -56,22 +56,19 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
         url = 'https://api.sightengine.com/1.0/check.json'
         data = aiohttp.FormData()
         data.add_field('media', file_bytes, filename='photo.jpg', content_type='image/jpeg')
-        data.add_field('models', 'nudity-2.1,wad')
+        data.add_field('models', 'nudity-2.1')
         data.add_field('api_user', SIGHTENGINE_USER)
         data.add_field('api_secret', SIGHTENGINE_SECRET)
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, data=data) as response:
                 res_data = await response.json()
-                print(f"Sightengine Response: {res_data}") # Render Log ထဲမှာ သွားစစ်လို့ရအောင် ထည့်ထားပေးပါတယ်
+                print(f"Sightengine Response: {res_data}")
                 if res_data.get('status') == 'success':
                     nudity = res_data.get('nudity', {})
-                    raw_score = nudity.get('raw', 0.0)
-                    partial_score = nudity.get('partial', 0.0)
+                    # safe နှုန်းက 0.5 (50%) အောက် လျော့သွားရင် (သို့မဟုတ်) ညစ်ညမ်းမှု ပါလာရင် တားမည်
                     safe_score = nudity.get('safe', 1.0)
-                    
-                    # ညစ်ညမ်းမှု အမှတ်အသားတွေ့ပါက True ပြန်မည်
-                    if raw_score > 0.15 or partial_score > 0.3 or safe_score < 0.85:
+                    if safe_score < 0.6:
                         return True
     except Exception as e:
         print(f"NSFW File Check Error: {e}")
@@ -97,11 +94,11 @@ async def handle_photo(message: types.Message):
     file_io = await bot.download_file(file.file_path)
     file_bytes = file_io.read()
 
-    # NSFW စစ်ဆေးခြင်း (Bytes ဖြင့် စစ်မည်)
+    # NSFW စစ်ဆေးခြင်း
     is_nsfw = await check_nsfw_file(file_bytes)
     if is_nsfw:
         await message.reply("⚠️ ပုံထဲတွင် မသင့်လျော်သော (NSFW/Sex) ပါဝင်နေသဖြင့် Channel သို့ တင်ခွင့်မပြုပါ။")
-        return  # <-- ဒီ return လေး ထည့်ပေးလိုက်ပါပြီ (ဒီကောင်က Channel ထဲ မရောက်အောင် တားပေးတာပါ)
+        return
 
     CHANNEL_ID = "@ydbumailbox"
     sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=file_id, caption=message.caption)
