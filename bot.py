@@ -35,7 +35,7 @@ SIGHTENGINE_URL = "https://api.sightengine.com/1.0/check-workflow.json"
 
 # Google Gemini AI
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
 GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     "{model}:generateContent"
@@ -465,6 +465,11 @@ async def check_photo_message(message: Message) -> bool:
 # =========================================================
 # STATUS / DELETE BUTTONS
 # =========================================================
+
+async def send_rejection(message: Message):
+    """Tell the sender that the image was rejected or could not be verified."""
+    await message.answer(REJECT_TEXT)
+
 
 async def delete_status_message(message: Message | None):
     if message is None:
