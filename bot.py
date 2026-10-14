@@ -47,32 +47,33 @@ def find_bad_word(text: str) -> str:
             return word
     return None
 
-# Sightengine ဖြင့် ပုံကို NSFW ပိုမိုတင်းကြပ်စွာ စစ်ဆေးခြင်း
-async def check_nsfw(photo_url: str) -> bool:
+# Sightengine သို့ ဖိုင်ပုံစံ (Bytes) ဖြင့် ပို့၍ NSFW တင်းကြပ်စွာ စစ်ဆေးခြင်း
+async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_USER or not SIGHTENGINE_SECRET:
         return False
         
-    params = {
-        'url': photo_url,
-        'models': 'nudity-2.1,wad',
-        'api_user': SIGHTENGINE_USER,
-        'api_secret': SIGHTENGINE_SECRET
-    }
     try:
+        url = 'https://api.sightengine.com/1.0/check.json'
+        data = aiohttp.FormData()
+        data.add_field('media', file_bytes, filename='photo.jpg', content_type='image/jpeg')
+        data.add_field('models', 'nudity-2.1,wad')
+        data.add_field('api_user', SIGHTENGINE_USER)
+        data.add_field('api_secret', SIGHTENGINE_SECRET)
+
         async with aiohttp.ClientSession() as session:
-            async with session.get('https://api.sightengine.com/1.0/check.json', params=params) as response:
-                data = await response.json()
-                if data.get('status') == 'success':
-                    nudity = data.get('nudity', {})
+            async with session.post(url, data=data) as response:
+                res_data = await response.json()
+                if res_data.get('status') == 'success':
+                    nudity = res_data.get('nudity', {})
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
                     safe_score = nudity.get('safe', 1.0)
                     
-                    # ညစ်ညမ်းမှု သို့မဟုတ် မသင့်လျော်သော အမှတ်အသား အနည်းငယ်ပါတာနဲ့ တားဆီးရန်
-                    if raw_score > 0.2 or partial_score > 0.4 or safe_score < 0.8:
+                    # ညစ်ညမ်းမှု အမှတ်အသားတွေ့ပါက True ပြန်မည်
+                    if raw_score > 0.15 or partial_score > 0.3 or safe_score < 0.85:
                         return True
     except Exception as e:
-        print(f"NSFW Check Error: {e}")
+        print(f"NSFW File Check Error: {e}")
     return False
 
 @dp.message(F.text.startswith("/"))
@@ -89,14 +90,14 @@ async def handle_photo(message: types.Message):
         await message.reply(f"⚠️ ပို့စ်စာသားထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်လို့မရပါ။")
         return
 
-    # ပုံ၏ Telegram file path ကို ယူခြင်း
+    # Telegram မှ ပုံဖိုင်ကို Bytes အဖြစ် ဒေါင်းလုပ်ဆွဲယူခြင်း
     file_id = message.photo[-1].file_id
     file = await bot.get_file(file_id)
-    file_path = file.file_path
-    photo_url = f"https://api.telegram.org/file/bot{bot.token}/{file_path}"
+    file_io = await bot.download_file(file.file_path)
+    file_bytes = file_io.read()
 
-    # NSFW စစ်ဆေးခြင်း
-    is_nsfw = await check_nsfw(photo_url)
+    # NSFW စစ်ဆေးခြင်း (Bytes ဖြင့် စစ်မည်)
+    is_nsfw = await check_nsfw_file(file_bytes)
     if is_nsfw:
         await message.reply("⚠️ ပုံထဲတွင် မသင့်လျော်သော (NSFW/Sex) ပါဝင်နေသဖြင့် Channel သို့ တင်ခွင့်မပြုပါ။")
         return
