@@ -38,9 +38,7 @@ if not all([
     SIGHTENGINE_API_SECRET,
     SIGHTENGINE_WORKFLOW_ID,
 ]):
-    raise RuntimeError(
-        "Sightengine API credentials or Workflow ID are missing!"
-    )
+    raise RuntimeError("Sightengine credentials or Workflow ID are missing!")
 
 
 # =========================================================
@@ -53,7 +51,7 @@ dp = Dispatcher()
 
 
 # =========================================================
-# 3. ALBUM STORAGE
+# 3. STORAGE
 # =========================================================
 
 album_cache: Dict[str, List[types.Message]] = {}
@@ -61,13 +59,69 @@ album_locks: Dict[str, asyncio.Lock] = {}
 album_tasks: Dict[str, asyncio.Task] = {}
 album_last_seen: Dict[str, float] = {}
 
-# Album deletion IDs are stored server-side so that
-# callback_data stays within Telegram's size limit.
+# Status messages shown while albums are being checked.
+album_status_messages: Dict[str, types.Message] = {}
+
+# Store Telegram channel message IDs for album deletion.
 delete_groups: Dict[str, List[int]] = {}
 
 
 # =========================================================
-# 4. BAD WORD FILTER
+# 4. USER MESSAGES
+# =========================================================
+
+CHECKING_TEXT = (
+    "⏳ ခဏစောင့်ပေးပါရှင့်။ သင့်ပို့စ်တွင် "
+    "အများပြည်သူအတွက် မသင့်လျော်သော အကြောင်းအရာများ "
+    "ပါဝင်ခြင်းရှိ၊ မရှိ စစ်ဆေးနေပါသည်။"
+)
+
+SUCCESS_TEXT = "✅ ပို့စ်ကို Channel သို့ တင်ပြီးပါပြီ။"
+
+REJECT_TEXT = (
+    "⚠️ Mailboxသည် မသင့်လျော်သောပုံများ လက်မခံပါ။ "
+    "အခြားပုံတစ်ပုံကို ပေးပို့ပေးပါရှင့်။"
+)
+
+ERROR_TEXT = (
+    "⚠️ ပုံကို စစ်ဆေးရာတွင် ယာယီအမှားဖြစ်နေပါသည်။ "
+    "ကျေးဇူးပြု၍ ခဏအကြာတွင် ပြန်ပို့ပေးပါရှင့်။"
+)
+
+
+async def delete_status_message(message: Optional[types.Message]):
+    """Delete a temporary checking message safely."""
+
+    if message is None:
+        return
+
+    try:
+        await message.delete()
+    except Exception as error:
+        print("Status message deletion error:", repr(error))
+
+
+async def reply_final_result(
+    original_message: types.Message,
+    status_message: Optional[types.Message],
+    text: str,
+    keyboard: Optional[InlineKeyboardMarkup] = None,
+):
+    """Remove checking message, then send the final result."""
+
+    await delete_status_message(status_message)
+
+    try:
+        await original_message.reply(
+            text,
+            reply_markup=keyboard,
+        )
+    except Exception as error:
+        print("Final reply error:", repr(error))
+
+
+# =========================================================
+# 5. BAD WORD FILTER
 # =========================================================
 
 BAD_WORDS = [
@@ -91,17 +145,17 @@ def find_bad_word(text: Optional[str]) -> Optional[str]:
     if not text:
         return None
 
-    lowered = text.lower()
+    text_lower = text.lower()
 
     for word in BAD_WORDS:
-        if word.lower() in lowered:
+        if word.lower() in text_lower:
             return word
 
     return None
 
 
 # =========================================================
-# 5. RENDER WEB SERVER
+# 6. RENDER WEB SERVER
 # =========================================================
 
 async def handle(request):
@@ -124,17 +178,16 @@ async def start_web_server():
 
 
 # =========================================================
-# 6. SIGHTENGINE WORKFLOW
+# 7. SIGHTENGINE WORKFLOW
 # =========================================================
 
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     """
-    Returns:
-        True  -> Block image
-        False -> Workflow explicitly accepted image
+    True  = block the image
+    False = Workflow explicitly accepted the image
 
-    Uses the configured Sightengine Workflow only.
-    API failures and unknown actions fail closed.
+    Uses Sightengine Workflow only.
+    Errors and unknown actions fail closed.
     """
 
     url = "https://api.sightengine.com/1.0/check-workflow.json"
@@ -160,10 +213,7 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 print("Sightengine HTTP status:", response.status)
 
                 if response.status != 200:
-                    print(
-                        "Sightengine HTTP error:",
-                        response_text[:1000],
-                    )
+                    print("Sightengine HTTP error:", response_text[:1000])
                     return True
 
                 try:
@@ -182,16 +232,11 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 summary = result.get("summary")
 
                 if not isinstance(summary, dict):
-                    print("Sightengine response has no summary.")
+                    print("Sightengine summary missing.")
                     return True
 
                 action = summary.get("action")
-
-                print("Sightengine workflow action:", action)
-                print("Sightengine reject probability:",
-                      summary.get("reject_prob"))
-                print("Sightengine reject reasons:",
-                      summary.get("reject_reason"))
+                print("Sightengine Workflow action:", action)
 
                 if action == "accept":
                     return False
@@ -216,7 +261,7 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
 
 
 async def moderate_photo(message: types.Message) -> bool:
-    """Return True only if Workflow accepts the image."""
+    """Return True only when the Workflow accepts the photo."""
 
     try:
         if not message.photo:
@@ -241,13 +286,13 @@ async def moderate_photo(message: types.Message) -> bool:
 
 
 # =========================================================
-# 7. START COMMAND
+# 8. START COMMAND
 # =========================================================
 
 @dp.message(F.text == "/start")
 async def handle_start(message: types.Message):
     await message.reply(
-        "မင်္ဂလာပါရှင့်။\n"
+        "မင်္ဂလာပါရှင့်။\n"
         "ဤဘော့တ်မှတစ်ဆင့် Channel သို့ ပုံနှင့်စာများ "
         "ပေးပို့တင်နိုင်ပါသည်။\n"
         "ပုံများကို Sightengine Workflow ဖြင့် စစ်ဆေးပါသည်။"
@@ -260,18 +305,17 @@ async def handle_other_commands(message: types.Message):
 
 
 # =========================================================
-# 8. ALBUM PROCESSING
+# 9. PROCESS ALBUM
 # =========================================================
 
 async def process_album_after_delay(media_group_id: str):
-    """
-    Collect all album messages until no new item arrives
-    for 2 seconds, then moderate and publish the entire album.
-    """
+    messages: List[types.Message] = []
+    status_message: Optional[types.Message] = None
 
     try:
         loop = asyncio.get_running_loop()
 
+        # Wait until no new album item arrives for 2 seconds.
         while True:
             await asyncio.sleep(0.5)
 
@@ -290,58 +334,60 @@ async def process_album_after_delay(media_group_id: str):
 
         async with lock:
             messages = album_cache.pop(media_group_id, [])
+            status_message = album_status_messages.pop(
+                media_group_id, None
+            )
 
         if not messages:
+            await delete_status_message(status_message)
             return
 
-        messages.sort(key=lambda m: m.message_id)
+        messages.sort(key=lambda item: item.message_id)
 
-        # Get caption from whichever album item contains it.
+        # Find the caption, regardless of which album item contains it.
         caption_text = next(
-            (m.caption for m in messages if m.caption),
+            (item.caption for item in messages if item.caption),
             "",
         )
 
-        # Reject inappropriate caption text.
         matched_word = find_bad_word(caption_text)
 
         if matched_word:
-            await messages[0].reply(
+            await reply_final_result(
+                messages[0],
+                status_message,
                 f"⚠️ စာထဲတွင် မသင့်လျော်သော စာသား "
-                f"'{matched_word}' ပါဝင်နေသဖြင့် "
-                f"Album ကို မတင်ပါ။"
+                f"'{matched_word}' ပါဝင်နေသဖြင့် ပို့စ်ကို မတင်ပါ။",
             )
             return
 
-        # Telegram media groups support up to 10 items.
-        if len(messages) > 10:
-            await messages[0].reply(
-                "⚠️ Album တစ်ခုတွင် ပုံ ၁၀ ပုံထက် "
-                "ပိုနေပါသည်။ Album တစ်ခုလျှင် ပုံ ၁၀ ပုံအထိသာ "
-                "တင်နိုင်ပါသည်။"
+        if len(messages) < 2 or len(messages) > 10:
+            await reply_final_result(
+                messages[0],
+                status_message,
+                "⚠️ Album ပုံအရေအတွက် မမှန်ပါ။ "
+                "ပုံ ၂ ပုံမှ ၁၀ ပုံအထိ Album အဖြစ် ပေးပို့ပါ။",
             )
             return
 
-        # Moderate every photo before publishing any photo.
+        # Check every image before publishing any image.
         for index, msg in enumerate(messages, start=1):
             print(
                 f"Checking album {media_group_id}: "
-                f"image {index}/{len(messages)}"
+                f"{index}/{len(messages)}"
             )
 
             accepted = await moderate_photo(msg)
 
             if not accepted:
-                await messages[0].reply(
-                    "⚠️ Album ထဲမှ ပုံတစ်ပုံကို Workflow က "
-                    "Reject လုပ်ထားပါသည်၊ သို့မဟုတ် "
-                    "စစ်ဆေးမှု မအောင်မြင်ပါ။ "
-                    "Album တစ်ခုလုံးကို Channel သို့ မတင်ပါ။"
+                await reply_final_result(
+                    messages[0],
+                    status_message,
+                    REJECT_TEXT,
                 )
                 return
 
-        # Send all images together as one Telegram album.
-        # Put the caption on the first media item only.
+        # Put caption on the first image only.
         media_list = []
 
         for index, msg in enumerate(messages):
@@ -358,7 +404,6 @@ async def process_album_after_delay(media_group_id: str):
         )
 
         group_key = uuid.uuid4().hex[:16]
-
         delete_groups[group_key] = [
             sent.message_id for sent in sent_messages
         ]
@@ -374,40 +419,46 @@ async def process_album_after_delay(media_group_id: str):
             ]
         )
 
-        await messages[0].reply(
-            f"✅ ပုံ {len(messages)} ပုံနှင့် Caption စာသားကို "
-            "Workflow စစ်ဆေးပြီး Channel သို့ "
-            "Album အဖြစ် တင်ပြီးပါပြီ။",
-            reply_markup=keyboard,
+        await reply_final_result(
+            messages[0],
+            status_message,
+            SUCCESS_TEXT,
+            keyboard,
         )
+
+    except asyncio.CancelledError:
+        raise
 
     except Exception as error:
         print(
-            f"Album processing error ({media_group_id}): "
-            f"{error!r}"
+            f"Album processing error ({media_group_id}): {error!r}"
         )
 
-        # Preserve a reference for user notification.
-        messages = album_cache.get(media_group_id, [])
+        if not status_message:
+            status_message = album_status_messages.get(media_group_id)
+
+        if not messages:
+            messages = album_cache.get(media_group_id, [])
 
         if messages:
-            try:
-                await messages[0].reply(
-                    "⚠️ Album တင်ရာတွင် Error ဖြစ်နေပါသည်။ "
-                    "Render Logs ကို စစ်ဆေးပေးပါ။"
-                )
-            except Exception:
-                pass
+            await reply_final_result(
+                messages[0],
+                status_message,
+                ERROR_TEXT,
+            )
+        else:
+            await delete_status_message(status_message)
 
     finally:
         album_cache.pop(media_group_id, None)
         album_last_seen.pop(media_group_id, None)
         album_locks.pop(media_group_id, None)
         album_tasks.pop(media_group_id, None)
+        album_status_messages.pop(media_group_id, None)
 
 
 # =========================================================
-# 9. PHOTO AND ALBUM HANDLER
+# 10. PHOTO HANDLER: ALBUM AND SINGLE PHOTO
 # =========================================================
 
 @dp.message(F.photo)
@@ -427,11 +478,18 @@ async def handle_photo(message: types.Message):
 
         async with album_locks[group_id]:
             album_cache[group_id].append(message)
-
-            # Update the time whenever an album item arrives.
             album_last_seen[group_id] = loop.time()
 
-            # Create only one collector task for each album.
+            # Show the checking message once per album.
+            if group_id not in album_status_messages:
+                try:
+                    status = await message.reply(CHECKING_TEXT)
+                    album_status_messages[group_id] = status
+                except Exception as error:
+                    print("Album status message error:", repr(error))
+
+            # Start one collector task per album.
+            # Do not cancel/restart it when another image arrives.
             if group_id not in album_tasks:
                 album_tasks[group_id] = asyncio.create_task(
                     process_album_after_delay(group_id)
@@ -449,20 +507,25 @@ async def handle_photo(message: types.Message):
     if matched_word:
         await message.reply(
             f"⚠️ စာထဲတွင် မသင့်လျော်သော စာသား "
-            f"'{matched_word}' ပါဝင်နေသဖြင့် မတင်ပါ။"
+            f"'{matched_word}' ပါဝင်နေသဖြင့် ပို့စ်ကို မတင်ပါ။"
         )
         return
 
-    accepted = await moderate_photo(message)
-
-    if not accepted:
-        await message.reply(
-            "⚠️ Workflow က ပုံကို လက်မခံပါ၊ သို့မဟုတ် "
-            "စစ်ဆေးမှု မအောင်မြင်ပါ။ Channel သို့ မတင်ထားပါ။"
-        )
-        return
+    status_message = None
 
     try:
+        status_message = await message.reply(CHECKING_TEXT)
+
+        accepted = await moderate_photo(message)
+
+        if not accepted:
+            await reply_final_result(
+                message,
+                status_message,
+                REJECT_TEXT,
+            )
+            return
+
         sent_message = await bot.send_photo(
             chat_id=CHANNEL_ID,
             photo=message.photo[-1].file_id,
@@ -480,22 +543,25 @@ async def handle_photo(message: types.Message):
             ]
         )
 
-        await message.reply(
-            "✅ Workflow စစ်ဆေးမှု အောင်မြင်ပြီး "
-            "ပို့စ်ကို Channel သို့ တင်ပြီးပါပြီ။",
-            reply_markup=keyboard,
+        await reply_final_result(
+            message,
+            status_message,
+            SUCCESS_TEXT,
+            keyboard,
         )
 
     except Exception as error:
-        print("Single photo publishing error:", repr(error))
-        await message.reply(
-            "⚠️ ပုံကို Channel သို့ တင်မရပါ။ "
-            "Render Logs နှင့် Bot Admin Permission ကို စစ်ပါ။"
+        print("Single photo handler error:", repr(error))
+
+        await reply_final_result(
+            message,
+            status_message,
+            ERROR_TEXT,
         )
 
 
 # =========================================================
-# 10. TEXT MESSAGE HANDLER
+# 11. TEXT MESSAGE HANDLER
 # =========================================================
 
 @dp.message(F.text)
@@ -509,7 +575,7 @@ async def handle_text(message: types.Message):
     if matched_word:
         await message.reply(
             f"⚠️ စာထဲတွင် မသင့်လျော်သော စာသား "
-            f"'{matched_word}' ပါဝင်နေသဖြင့် မတင်ပါ။"
+            f"'{matched_word}' ပါဝင်နေသဖြင့် ပို့စ်ကို မတင်ပါ။"
         )
         return
 
@@ -531,7 +597,7 @@ async def handle_text(message: types.Message):
         )
 
         await message.reply(
-            "✅ စာသားကို Channel သို့ တင်ပြီးပါပြီ။",
+            SUCCESS_TEXT,
             reply_markup=keyboard,
         )
 
@@ -544,7 +610,7 @@ async def handle_text(message: types.Message):
 
 
 # =========================================================
-# 11. DELETE SINGLE POST
+# 12. DELETE SINGLE POST
 # =========================================================
 
 @dp.callback_query(F.data.startswith("delete_"))
@@ -572,13 +638,13 @@ async def process_delete(callback: types.CallbackQuery):
 
         await callback.answer(
             "⚠️ ပို့စ်ကို ဖျက်မရပါ။ "
-            "ဖျက်ပြီးသားဖြစ်နိုင်သလို Permission ကိုလည်း စစ်ပါ။",
+            "Permission နှင့် ပို့စ်အခြေအနေကို စစ်ဆေးပါ။",
             show_alert=True,
         )
 
 
 # =========================================================
-# 12. DELETE WHOLE ALBUM
+# 13. DELETE ALBUM
 # =========================================================
 
 @dp.callback_query(F.data.startswith("deletegroup_"))
@@ -628,7 +694,7 @@ async def process_delete_group(callback: types.CallbackQuery):
 
 
 # =========================================================
-# 13. MAIN
+# 14. MAIN
 # =========================================================
 
 async def main():
