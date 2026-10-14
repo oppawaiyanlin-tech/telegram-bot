@@ -45,10 +45,10 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# NSFW / Sex ပုံများကို လုံးဝမလွတ်စေရန် Fail-Closed စနစ်ဖြင့် စစ်ဆေးခြင်း
+# ရိုးရိုးပုံနဲ့ ကာတွန်းပုံများကို ခွင့်ပြုပြီး Sex ပုံစစ်စစ်များကိုသာ တားဆီးမည့် မျှတသော စစ်ဆေးချက်
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
-        return True # API Key မရှိပါက လုံခြုံရေးအရ တားဆီးမည်
+        return False
         
     try:
         url = 'https://api.sightengine.com/1.0/check.json'
@@ -69,15 +69,14 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
                     
-                    # တင်းကျပ်သော သတ်မှတ်ချက် (Safe score နိမ့်လျှင် သို့မဟုတ် အနည်းငယ် သံသယရှိလျှင် တားမည်)
-                    if safe_score < 0.85 or raw_score > 0.2 or partial_score > 0.3:
+                    # မျှတသော သတ်မှတ်ချက် (ရိုးရိုးပုံ/ကာတွန်းများကို လွတ်စေပြီး အပြာပုံများကိုသာ ဖမ်းမည်)
+                    if safe_score < 0.35 or raw_score > 0.75 or partial_score > 0.85:
                         return True
                 else:
-                    # API ဘက်မှ အမှားတစ်စုံတစ်ရာ ရှိလျှင် လုံခြုံရေးအရ ပုံကို တားဆီးမည်
-                    return True
+                    return False
     except Exception as e:
         print(f"NSFW File Check Exception: {e}")
-        return True # Error တက်လျှင်လည်း လုံခြုံရေးအရ တားဆီးမည်
+        return False
         
     return False
 
@@ -131,7 +130,7 @@ async def handle_photo(message: types.Message):
                 await messages[0].reply(f"⚠️ စာထဲတွင် မိုက်ရိုင်းသော စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့် တင်၍မရပါ။")
                 return
 
-            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို NSFW သေချာစစ်ဆေးခြင်း
+            # ၂။ Album ထဲမှ ပုံတစ်ခုချင်းစီကို NSFW စစ်ဆေးခြင်း
             media_list = []
             for idx, msg in enumerate(messages):
                 photo = msg.photo[-1]
