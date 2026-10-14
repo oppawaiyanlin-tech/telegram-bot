@@ -47,14 +47,14 @@ def find_bad_word(text: str) -> str:
             return word
     return None
 
-# Sightengine ဖြင့် ပုံကို NSFW စစ်ဆေးခြင်း
+# Sightengine ဖြင့် ပုံကို NSFW ပိုမိုတင်းကြပ်စွာ စစ်ဆေးခြင်း
 async def check_nsfw(photo_url: str) -> bool:
     if not SIGHTENGINE_USER or not SIGHTENGINE_SECRET:
-        return False # API Key မရှိသေးရင် ကျော်သွားမယ်
+        return False
         
     params = {
         'url': photo_url,
-        'models': 'nudity-2.1',
+        'models': 'nudity-2.1,wad',
         'api_user': SIGHTENGINE_USER,
         'api_secret': SIGHTENGINE_SECRET
     }
@@ -64,8 +64,12 @@ async def check_nsfw(photo_url: str) -> bool:
                 data = await response.json()
                 if data.get('status') == 'success':
                     nudity = data.get('nudity', {})
-                    # ညစ်ညမ်းမှုရာခိုင်နှုန်း 0.5 (50%) ကျော်ရင် True ပေးမည်
-                    if nudity.get('safe', 1.0) < 0.5 or nudity.get('raw', 0.0) > 0.5:
+                    raw_score = nudity.get('raw', 0.0)
+                    partial_score = nudity.get('partial', 0.0)
+                    safe_score = nudity.get('safe', 1.0)
+                    
+                    # ညစ်ညမ်းမှု သို့မဟုတ် မသင့်လျော်သော အမှတ်အသား အနည်းငယ်ပါတာနဲ့ တားဆီးရန်
+                    if raw_score > 0.2 or partial_score > 0.4 or safe_score < 0.8:
                         return True
     except Exception as e:
         print(f"NSFW Check Error: {e}")
@@ -112,7 +116,7 @@ async def handle_text(message: types.Message):
 
     matched_word = find_bad_word(message.text)
     if matched_word:
-        await message.reply(f"⚠️ စာထဲမှာ မိုက်ရိုင်းတဲ့စာသား  ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
+        await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
     CHANNEL_ID = "@ydbumailbox"
