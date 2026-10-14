@@ -9,9 +9,9 @@ TOKEN = "8836515568:AAFrcGRN_r3Es_FCv1b4At7hgACarRpMN4U"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Sightengine API Credentials (ကိုကို့ရဲ့ API Key ထည့်ရန်)
-SIGHTENGINE_API_USER = "YOUR_API_USER"
-SIGHTENGINE_API_SECRET = "YOUR_API_SECRET"
+# Sightengine API Credentials (ကိုကို့ရဲ့ Key များကို တိုက်ရိုက်ထည့်သွင်းထားပါသည်)
+SIGHTENGINE_API_USER = "1243376243"
+SIGHTENGINE_API_SECRET = "44FbxJmUhnuP8a5sCD3yfQJeZm6CQrSa"
 
 # Render Port ဖွင့်ရန်
 async def handle(request):
@@ -40,6 +40,7 @@ async def check_nsfw(file_url: str) -> bool:
             data = await resp.json()
             if data.get('status') == 'success':
                 nudity = data.get('nudity', {})
+                # safe ရာခိုင်နှုန်း 0.6 ထက် နည်းပါက ညစ်ညမ်းသည်ဟု သတ်မှတ်မည်
                 if nudity.get('safe', 1.0) < 0.6:  
                     return True
     return False
@@ -50,6 +51,7 @@ async def handle_photo(message: types.Message):
     file = await bot.get_file(photo.file_id)
     file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
     
+    # ညစ်ညမ်းမှု ရှိမရှိ စစ်ဆေးမည်
     is_nsfw = await check_nsfw(file_url)
     if is_nsfw:
         await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
@@ -57,10 +59,10 @@ async def handle_photo(message: types.Message):
 
     CHANNEL_ID = "@yadanabonfreedom"
     
-    # 1. Channel (Page) ထဲသို့ တင်မည် (ခလုတ် လုံးဝမပါပါ)
+    # Channel (Page) ထဲသို့ တင်မည် (ခလုတ်မပါ)
     sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=message.caption)
 
-    # 2. User ဆီသို့ ပို့မည့် Reply ထဲတွင်သာ ဖျက်ရန် ခလုတ်ထည့်ပေးမည်
+    # User ဆီသို့ ပို့မည့် Reply ထဲတွင် ဖျက်ရန် ခလုတ်ထည့်မည်
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
     ])
@@ -70,10 +72,8 @@ async def handle_photo(message: types.Message):
 async def handle_text(message: types.Message):
     CHANNEL_ID = "@yadanabonfreedom"
     
-    # 1. Channel ထဲသို့ စာတင်မည် (ခလုတ်မပါ)
     sent_msg = await bot.send_message(chat_id=CHANNEL_ID, text=message.text)
 
-    # 2. User ဆီသို့ ပို့မည့် Reply ထဲတွင်သာ ဖျက်ရန် ခလုတ်ထည့်မည်
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
     ])
@@ -85,10 +85,7 @@ async def process_delete(callback_query: types.CallbackQuery):
         target_msg_id = int(callback_query.data.split("_")[1])
         CHANNEL_ID = "@yadanabonfreedom"
         
-        # Channel ထဲက ပို့စ်ကို ဖျက်မည်
         await bot.delete_message(chat_id=CHANNEL_ID, message_id=target_msg_id)
-        
-        # Bot နဲ့ Chat ထဲက မက်ဆေ့ချ်ကိုပါ ဖျက်မည် (သို့မဟုတ် ရှင်းလင်းမည်)
         await callback_query.message.delete()
         await callback_query.answer("🗑 ပို့စ်ကို အောင်မြင်စွာ ဖျက်လိုက်ပါပြီ။", show_alert=True)
     except Exception as e:
