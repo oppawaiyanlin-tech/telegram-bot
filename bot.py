@@ -285,12 +285,13 @@ async def ai_start_handler(message: Message):
     await message.answer(AI_WELCOME_TEXT)
 
 
-@router.message(Command("cancel"))
+@router.message(Command("cancel", "stop"))
 async def ai_cancel_handler(message: Message):
     if message.from_user:
         ai_active_users.discard(message.from_user.id)
     await message.answer(
-        "AI Chat ကို ပိတ်လိုက်ပါပြီ။ Mailbox ကို ပုံမှန်အတိုင်း ဆက်သုံးနိုင်ပါတယ်။\n"
+        "🛑 AI Chat ကို ပိတ်လိုက်ပါပြီ။\n"
+        "ယခုမှစပြီး စာသားပို့လျှင် Mailbox Channel သို့ ပုံမှန်တင်နိုင်ပါပြီ။\n"
         "AI ပြန်သုံးရန် /ai ကိုနှိပ်ပါ။"
     )
 
@@ -307,18 +308,16 @@ async def ai_clear_handler(message: Message):
         await message.answer("ဒီလုပ်ဆောင်ချက်ကို အသုံးမပြုနိုင်ပါ။")
 
 
-@router.message(F.text, lambda message: bool(
-    message.from_user and message.from_user.id in ai_active_users
-))
-async def ai_text_handler(message: Message):
+async def process_ai_text(message: Message):
+    """Handle ordinary text as AI chat while this user has AI mode enabled."""
     if not message.from_user:
         return
 
     user_id = message.from_user.id
     text_content = (message.text or "").strip()
 
+    # Commands must be handled by their own command handlers.
     if text_content.startswith("/"):
-        # Let command handlers process commands like /cancel and /clear.
         return
 
     if not text_content:
@@ -332,7 +331,7 @@ async def ai_text_handler(message: Message):
         return
 
     if not GEMINI_API_KEY:
-        await message.answer("⚠️ Gemini API Key မသတ်မှတ်ရသေးပါ။")
+        await message.answer("⚠️ AI စနစ်ကို မသတ်မှတ်ရသေးပါ။ Admin ကို ဆက်သွယ်ပေးပါ။")
         return
 
     async with get_ai_lock(user_id):
@@ -355,8 +354,8 @@ async def ai_text_handler(message: Message):
                 )
             elif "Gemini API error:" in message_text:
                 await message.answer(
-                    "⚠️ AI ကို ချိတ်ဆက်ရာမှာ ပြဿနာဖြစ်နေပါတယ်။ "
-                    "ခဏနေမှ ပြန်စမ်းကြည့်ပါ။"
+                    "⚠️ AI API ချိတ်ဆက်မှု မအောင်မြင်ပါ။ Admin က Render Logs ထဲရှိ "
+                    "Gemini API error ကို စစ်ဆေးပေးရန် လိုအပ်ပါတယ်။"
                 )
             else:
                 await message.answer(
@@ -573,6 +572,12 @@ async def text_handler(message: Message):
     if text_content.startswith("/"):
         return
 
+    # CRITICAL ROUTING GUARD: while AI mode is active, NEVER publish the text
+    # to the mailbox channel. Route it only to Gemini and return immediately.
+    if message.from_user and message.from_user.id in ai_active_users:
+        await process_ai_text(message)
+        return
+
     if contains_bad_word(text_content):
         await message.answer(
             "⚠️ မသင့်လျော်သော စကားလုံးများ ပါဝင်နေသောကြောင့် "
@@ -601,6 +606,10 @@ async def text_handler(message: Message):
 
 @router.message(F.photo, ~F.media_group_id)
 async def single_photo_handler(message: Message):
+    if message.from_user and message.from_user.id in ai_active_users:
+        await message.answer("🤖 AI Chat ဖွင့်ထားပါတယ်။ AI ပိတ်ရန် /cancel ကိုနှိပ်ပြီးမှ Mailbox သို့ ပုံပို့ပါ။")
+        return
+
     status = None
     try:
         if contains_bad_word(message.caption):
@@ -660,6 +669,10 @@ async def single_photo_handler(message: Message):
 
 @router.message(F.photo, F.media_group_id)
 async def album_photo_handler(message: Message):
+    if message.from_user and message.from_user.id in ai_active_users:
+        await message.answer("🤖 AI Chat ဖွင့်ထားပါတယ်။ AI ပိတ်ရန် /cancel ကိုနှိပ်ပြီးမှ Mailbox သို့ Album ပို့ပါ။")
+        return
+
     key = (message.chat.id, message.media_group_id)
     async with album_lock:
         state = album_states.get(key)
@@ -806,6 +819,7 @@ async def setup_bot_commands():
         BotCommand(command="start", description="Mailbox စတင်ရန်"),
         BotCommand(command="ai", description="Mailbox AI နဲ့ စကားပြောရန်"),
         BotCommand(command="cancel", description="AI Chat ပိတ်ရန်"),
+        BotCommand(command="stop", description="AI Chat ပိတ်ရန်"),
         BotCommand(command="clear", description="AI စကားပြောမှတ်တမ်း ရှင်းရန်"),
     ])
     await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
