@@ -45,10 +45,10 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine ဖြင့် NSFW / Sex ပုံများကို သေချာတိကျစွာ စစ်ဆေးမည့် အပိုင်း
+# NSFW / Sex ပုံများကို လုံးဝမလွတ်စေရန် Fail-Closed စနစ်ဖြင့် စစ်ဆေးခြင်း
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
-        return False
+        return True # API Key မရှိပါက လုံခြုံရေးအရ တားဆီးမည်
         
     try:
         url = 'https://api.sightengine.com/1.0/check.json'
@@ -69,14 +69,15 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
                     
-                    # တကယ့် Sex ပုံများနှင့် မသင့်လျော်သော ပုံများကို တားဆီးမည့် သတ်မှတ်ချက်
-                    if safe_score < 0.75 or raw_score > 0.4 or partial_score > 0.5:
+                    # တင်းကျပ်သော သတ်မှတ်ချက် (Safe score နိမ့်လျှင် သို့မဟုတ် အနည်းငယ် သံသယရှိလျှင် တားမည်)
+                    if safe_score < 0.85 or raw_score > 0.2 or partial_score > 0.3:
                         return True
                 else:
-                    return False
+                    # API ဘက်မှ အမှားတစ်စုံတစ်ရာ ရှိလျှင် လုံခြုံရေးအရ ပုံကို တားဆီးမည်
+                    return True
     except Exception as e:
         print(f"NSFW File Check Exception: {e}")
-        return False
+        return True # Error တက်လျှင်လည်း လုံခြုံရေးအရ တားဆီးမည်
         
     return False
 
@@ -177,7 +178,7 @@ async def handle_photo(message: types.Message):
         
         is_nsfw = await check_nsfw_file(file_bytes)
         if is_nsfw:
-            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
+            await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် တင်၍မရပါ။")
             return
 
         CHANNEL_ID = "@ydbumailbox"
