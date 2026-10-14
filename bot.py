@@ -45,7 +45,7 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Sightengine ဖြင့် NSFW သေချာတိကျစွာ စစ်ဆေးမည့် လုပ်ဆောင်ချက်
+# Sex ပုံများကို အမှန်တကယ် တိကျသေချာစွာ တားဆီးမည့် NSFW စစ်ဆေးခြင်း
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
         return False
@@ -54,14 +54,15 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
         url = 'https://api.sightengine.com/1.0/check.json'
         data = aiohttp.FormData()
         data.add_field('media', file_bytes, filename='photo.jpg', content_type='image/jpeg')
-        data.add_field('models', 'nudity-2.1,wad')
+        # nudity-2.1 မော်ဒယ်ကို သီးသန့်အသုံးပြု၍ တိကျစွာစစ်ဆေးမည်
+        data.add_field('models', 'nudity-2.1')
         data.add_field('api_user', SIGHTENGINE_API_USER)
         data.add_field('api_secret', SIGHTENGINE_API_SECRET)
 
         async with aiohttp.ClientSession() as session_api:
             async with session_api.post(url, data=data) as response:
                 res_data = await response.json()
-                print(f"SIGHTENGINE RESPONSE: {res_data}")
+                print(f"SIGHTENGINE NUDITY RESPONSE: {res_data}")
                 
                 if res_data.get('status') == 'success':
                     nudity = res_data.get('nudity', {})
@@ -69,8 +70,8 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
                     
-                    # ပုံမှန်ပုံများကို မမှားစေဘဲ Sex ပုံစံများကို တိကျစွာဖမ်းမည့် သတ်မှတ်ချက်
-                    if safe_score < 0.6 or raw_score > 0.6 or partial_score > 0.7:
+                    # တကယ့် ကိုယ်တုံးလုံးပုံ သို့မဟုတ် အနည်းငယ် မသင့်လျော်သည်နှင့် တားဆီးမည်
+                    if safe_score < 0.85 or raw_score > 0.01 or partial_score > 0.05:
                         return True
                 else:
                     return False
