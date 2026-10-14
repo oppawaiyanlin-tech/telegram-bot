@@ -1,19 +1,15 @@
 import os
 import asyncio
-import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Token အသစ်ကို ထည့်သွင်းထားပါသည်
-TOKEN = "8374975220:AAFfjfgMSisDp3n09XFM5mg_QXYmY83Mcqk"
+TOKEN = "8973237805:AAEjMTPFVC8BT6qCKBJkEW274cbYOAgfe2A"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Sightengine API Credentials
-SIGHTENGINE_API_USER = "1243376243"
-SIGHTENGINE_API_SECRET = "44FbxJmUhnuP8a5sCD3yfQJeZm6CQrSa"
-
+# မသင့်လျော်သော စကားလုံးများစာရင်း
 BAD_WORDS = [
     "လီး", "စက်ပက်", "စောက်ဖုတ်", "စောက်ဖုတ်ပြဲမ", "မသာမ", "ဖာသည်မ", 
     "မအေလိုး", "ခွေးမသား", "လီးပဲ", "ကိုယ်မေကိုလိုး", "နှမလိုး", "ငါလိုးမသား", 
@@ -38,22 +34,6 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-async def check_nsfw(file_url: str) -> bool:
-    params = {
-        'url': file_url,
-        'models': 'nudity,wad',
-        'api_user': SIGHTENGINE_API_USER,
-        'api_secret': SIGHTENGINE_API_SECRET
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.get('https://api.sightengine.com/1.0/check.json', params=params) as resp:
-            data = await resp.json()
-            if data.get('status') == 'success':
-                nudity = data.get('nudity', {})
-                if nudity.get('safe', 1.0) < 0.6:  
-                    return True
-    return False
-
 def find_bad_word(text: str) -> str:
     if not text:
         return None
@@ -77,18 +57,9 @@ async def handle_photo(message: types.Message):
         await message.reply(f"⚠️ သူစာထဲမှာ မိုက်ရိုင်းတဲ့စာသား ဥပမာ ''{matched_word}'' ပါဝင်နေသဖြင့်တင်လို့မရပါ။")
         return
 
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
-    
-    is_nsfw = await check_nsfw(file_url)
-    if is_nsfw:
-        await message.reply("⚠️ တင်ပြလာသော ပုံသည် မသင့်လျော်သော အကြောင်းအရာ (NSFW) ပါဝင်နေသဖြင့် Channel သို့ တင်၍မရပါ။")
-        return
-
     CHANNEL_ID = "@yadanabonfreedom"
     
-    sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=message.caption)
+    sent_msg = await bot.send_photo(chat_id=CHANNEL_ID, photo=message.photo[-1].file_id, caption=message.caption)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🗑 ဤပို့စ်ကို ဖျက်မည်", callback_data=f"delete_{sent_msg.message_id}")]
