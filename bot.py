@@ -2,7 +2,6 @@
 import asyncio
 import io
 import os
-import re
 import uuid
 import logging
 from dataclasses import dataclass, field
@@ -45,11 +44,9 @@ SIGHTENGINE_URL = (
 )
 
 PORT = int(os.getenv("PORT", "10000"))
-
-# စောင့်ဆိုင်းချိန်၊ album စုဆောင်းချိန်
+MAX_IMAGE_SIZE = 15 * 1024 * 1024
+MAX_ALBUM_PHOTOS = 10
 ALBUM_DEBOUNCE_SECONDS = 1.5
-ALBUM_MAX_PHOTOS = 10
-MAX_IMAGE_SIZE = 15 * 1024 * 1024  # 15 MB
 
 CHECKING_TEXT = (
     "⏳ ခဏစောင့်ပေးပါရှင့်။ သင့်ပို့စ်တွင် "
@@ -64,7 +61,7 @@ REJECT_TEXT = (
 
 SUCCESS_TEXT = "✅ ပို့စ်ကို Channel သို့ တင်ပြီးပါပြီ။"
 
-BAD_WORDS = [
+BAD_WORDS = list(dict.fromkeys([
     "ငါလိုးမ",
     "လီး",
     "စက်ပက်",
@@ -135,50 +132,7 @@ BAD_WORDS = [
     "ချီးထုတ်",
     "လီးစား",
     "လီးဘဲ",
-    "လိုးမ",
-    "မေလိုး",
-    "မင်းမေစက်ပက်",
-    "မင်းမေမင်းလိုး",
-    "ဖေလိုးမ",
-    "ဖေလိုး",
-    "အဖေလိုး",
-    "စောက်ပက်စား",
-    "စောက်ကောင်",
-    "စောက်ကောင်မ",
-    "စောက်ချီးစား",
-    "ချီးလိုပဲ",
-    "သုတ်ကောင်",
-    "တုတ်ကြောင်မ",
-    "သေခြင်းဆိုး",
-    "ကုလားနာ",
-    "သေနာကောင်",
-    "ဖွတ်ကျား",
-    "စောက်ရူး",
-    "သေဂျင်းဇိုးလေး",
-    "စောက်မွှေး",
-    "လီးပြဲ",
-    "ဖာသည်",
-    "ဒစ်စုပ်",
-    "ငါ့ဒစ်စုပ်",
     "လီးစုပ့",
-    "လီးစား",
-    "လီးဘဲ",
-    "လီးစုပ်",
-    "လိုးမ",
-    "မေလိုး",
-    "ဖေလိုး",
-    "အဖေလိုး",
-    "စောက်ပက်စား",
-    "ချီးလိုပဲ",
-    "ထဘီခြုံ",
-    "ငါလိုး",
-    "ခွေးလိုး",
-    "ချီးထုတ်",
-    "လီးစား",
-    "လီးဘဲ",
-    "လီးစုပ်",
-    "လီးစား",
-    "လီးဘဲ",
     "လိုးမ",
     "မေလိုး",
     "မင်းမေစက်ပက်",
@@ -204,111 +158,10 @@ BAD_WORDS = [
     "ဖာသည်",
     "ဒစ်စုပ်",
     "ငါ့ဒစ်စုပ်",
-    "ငါလိုး",
-    "ခွေးလိုး",
-    "ချီးထုတ်",
-    "လီးစား",
-    "လီးဘဲ",
-    "လိုးမ",
-    "မေလိုး",
-    "ဖေလိုး",
-    "အဖေလိုး",
-    "စောက်ပက်စား",
-    "စောက်ကောင်",
-    "စောက်ကောင်မ",
-    "စောက်ချီးစား",
-    "ချီးလိုပဲ",
-    "သုတ်ကောင်",
-    "တုတ်ကြောင်မ",
-    "သေခြင်းဆိုး",
-    "ကုလားနာ",
-    "သေနာကောင်",
-    "ဖွတ်ကျား",
-    "စောက်ရူး",
-    "သေဂျင်းဇိုးလေး",
-    "စောက်မွှေး",
-    "လီးပြဲ",
-    "ဖာသည်",
-    "ဒစ်စုပ်",
-    "ငါ့ဒစ်စုပ်",
-    "မင်းမေစက်ပက်",
-    "မင်းမေမင်းလိုး",
-    "ဖေလိုးမ",
-    "ဖေလိုး",
-    "အဖေလိုး",
-    "စောက်ပက်စား",
-    "စောက်ကောင်",
-    "စောက်ကောင်မ",
-    "စောက်ချီးစား",
-    "ချီးလိုပဲ",
-    "သုတ်ကောင်",
-    "တုတ်ကြောင်မ",
-    "သေခြင်းဆိုး",
-    "ကုလားနာ",
-    "သေနာကောင်",
-    "ဖွတ်ကျား",
-    "စောက်ရူး",
-    "သေဂျင်းဇိုးလေး",
-    "စောက်မွှေး",
-    "လီးပြဲ",
-    "ဖာသည်",
-    "ဒစ်စုပ်",
-    "ငါ့ဒစ်စုပ်",
-    "လီးစား",
-    "လီးဘဲ",
-    "လီးစုပ်",
-    "လိုးမ",
-    "မေလိုး",
-    "ဖေလိုး",
-    "အဖေလိုး",
-    "စောက်ပက်စား",
-    "စောက်ကောင်",
-    "စောက်ကောင်မ",
-    "စောက်ချီးစား",
-    "ချီးလိုပဲ",
-    "သုတ်ကောင်",
-    "တုတ်ကြောင်မ",
-    "သေခြင်းဆိုး",
-    "ကုလားနာ",
-    "သေနာကောင်",
-    "ဖွတ်ကျား",
-    "စောက်ရူး",
-    "သေဂျင်းဇိုးလေး",
-    "စောက်မွှေး",
-    "လီးပြဲ",
-    "ဖာသည်",
-    "ဒစ်စုပ်",
-    "ငါ့ဒစ်စုပ်",
-    "လီးစုပ်",
-    "လိုးမ",
-    "မေလိုး",
-    "ဖေလိုး",
-    "အဖေလိုး",
-    "စောက်ပက်စား",
-    "စောက်ကောင်",
-    "စောက်ကောင်မ",
-    "စောက်ချီးစား",
-    "ချီးလိုပဲ",
-    "သုတ်ကောင်",
-    "တုတ်ကြောင်မ",
-    "သေခြင်းဆိုး",
-    "ကုလားနာ",
-    "သေနာကောင်",
-    "ဖွတ်ကျား",
-    "စောက်ရူး",
-    "သေဂျင်းဇိုးလေး",
-    "စောက်မွှေး",
-    "လီးပြဲ",
-    "ဖာသည်",
-    "ဒစ်စုပ်",
-    "ငါ့ဒစ်စုပ်",
-]
-
-# ထပ်နေသော စကားလုံးများကို ဖယ်ရှားထားသည်။
-BAD_WORDS = list(dict.fromkeys(BAD_WORDS))
+]))
 
 # =========================================================
-# LOGGING AND BOT
+# LOGGING / BOT
 # =========================================================
 
 logging.basicConfig(
@@ -318,20 +171,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN ကို Render Environment Variables မှာ ထည့်ပါ။")
+    raise RuntimeError("BOT_TOKEN မရှိပါ။ Render Environment ကို စစ်ပါ။")
 
 if not CHANNEL_ID:
-    raise RuntimeError("CHANNEL_ID ကို သတ်မှတ်ပေးပါ။")
+    raise RuntimeError("CHANNEL_ID မရှိပါ။")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 dp.include_router(router)
 
-# Delete button အတွက် memory ထဲမှာ ခဏသိမ်းထားမည့် အချက်အလက်
 post_registry = {}
+album_states = {}
+album_lock = asyncio.Lock()
 
-# Album စုဆောင်းရန်
+
 @dataclass
 class AlbumState:
     messages: list = field(default_factory=list)
@@ -339,29 +193,24 @@ class AlbumState:
     task: asyncio.Task | None = None
 
 
-album_states = {}
-album_lock = asyncio.Lock()
-
-
 # =========================================================
-# TEXT MODERATION
+# BAD WORD CHECK
 # =========================================================
 
 def contains_bad_word(text: str | None) -> bool:
     if not text:
         return False
 
-    normalized_text = text.casefold()
+    normalized = text.casefold()
 
-    for word in BAD_WORDS:
-        if word.casefold() in normalized_text:
-            return True
-
-    return False
+    return any(
+        word.casefold() in normalized
+        for word in BAD_WORDS
+    )
 
 
 # =========================================================
-# SIGHTENGINE WORKFLOW MODERATION
+# SIGHTENGINE WORKFLOW
 # =========================================================
 
 async def check_nsfw_file(
@@ -369,46 +218,61 @@ async def check_nsfw_file(
     filename: str = "image.jpg",
 ) -> bool:
     """
-    True  = Workflow က လက်ခံသည်
-    False = Reject ဖြစ်သည် သို့မဟုတ် စစ်ဆေးမှု မအောင်မြင်ပါ
+    True = Workflow action accept
+    False = reject, API error, or unknown response
     """
 
-    if not (
-        SIGHTENGINE_API_USER
-        and SIGHTENGINE_API_SECRET
-        and SIGHTENGINE_WORKFLOW_ID
-    ):
-        logger.error("Sightengine Environment Variables မပြည့်စုံပါ။")
+    if not all([
+        SIGHTENGINE_API_USER,
+        SIGHTENGINE_API_SECRET,
+        SIGHTENGINE_WORKFLOW_ID,
+    ]):
+        logger.error(
+            "Sightengine credentials သို့မဟုတ် Workflow ID မပြည့်စုံပါ။"
+        )
         return False
 
-    timeout = aiohttp.ClientTimeout(total=45)
+    timeout = aiohttp.ClientTimeout(total=60)
 
     form = aiohttp.FormData()
-    form.add_field("api_user", SIGHTENGINE_API_USER)
-    form.add_field("api_secret", SIGHTENGINE_API_SECRET)
-    form.add_field("workflow_id", SIGHTENGINE_WORKFLOW_ID)
+    form.add_field(
+        "api_user",
+        SIGHTENGINE_API_USER,
+    )
+    form.add_field(
+        "api_secret",
+        SIGHTENGINE_API_SECRET,
+    )
+
+    # အရေးကြီးသော ပြင်ဆင်ချက်:
+    # Sightengine API က workflow ကို မျှော်လင့်သည်။
+    # workflow_id ဆိုတဲ့ Parameter မဟုတ်ပါ။
+    form.add_field(
+        "workflow",
+        SIGHTENGINE_WORKFLOW_ID,
+    )
+
     form.add_field(
         "media",
         image_bytes,
         filename=filename,
-        content_type="image/jpeg",
+        content_type="application/octet-stream",
     )
 
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(
+            timeout=timeout
+        ) as session:
             async with session.post(
                 SIGHTENGINE_URL,
                 data=form,
             ) as response:
-                response_text = await response.text()
+                raw_text = await response.text()
 
-                if response.status != 200:
-                    logger.error(
-                        "Sightengine HTTP error %s: %s",
-                        response.status,
-                        response_text[:500],
-                    )
-                    return False
+                logger.info(
+                    "Sightengine HTTP status: %s",
+                    response.status,
+                )
 
                 try:
                     result = await response.json(
@@ -416,105 +280,127 @@ async def check_nsfw_file(
                     )
                 except Exception:
                     logger.error(
-                        "Sightengine JSON မဖတ်နိုင်ပါ: %s",
-                        response_text[:500],
+                        "Sightengine JSON error: %s",
+                        raw_text[:1000],
                     )
                     return False
 
         if result.get("status") != "success":
             logger.error(
-                "Sightengine Workflow failed: %s",
+                "Sightengine API failure: %s",
                 result,
             )
             return False
 
         summary = result.get("summary") or {}
-        action = str(summary.get("action", "")).lower()
+        action = str(
+            summary.get("action", "")
+        ).strip().lower()
+
+        logger.info(
+            "Sightengine Workflow action: %s",
+            action,
+        )
 
         if action == "accept":
             return True
 
         if action == "reject":
+            logger.warning(
+                "Sightengine rejected image: %s",
+                summary.get("reject_reason", []),
+            )
             return False
 
-        # Unknown action ဖြစ်ရင် လုံခြုံရေးအတွက် ပိတ်မည်
-        logger.warning(
-            "Sightengine action မသိပါ: %s",
-            action,
+        logger.error(
+            "Unknown Sightengine action: %s",
+            result,
         )
         return False
 
     except asyncio.CancelledError:
         raise
+
     except Exception:
-        logger.exception("Sightengine စစ်ဆေးမှု အမှားဖြစ်နေပါသည်။")
+        logger.exception("Sightengine request failed")
         return False
 
 
-async def check_photo_message(message: Message) -> bool:
-    """
-    Telegram photo ကို download လုပ်ပြီး Sightengine Workflow ဖြင့် စစ်သည်။
-    """
-
+async def download_photo(message: Message):
     if not message.photo:
-        return False
+        return None
 
-    photo = message.photo[-1]
     buffer = io.BytesIO()
 
     try:
         await bot.download(
-            file=photo,
+            file=message.photo[-1],
             destination=buffer,
         )
 
-        image_bytes = buffer.getvalue()
+        content = buffer.getvalue()
 
-        if not image_bytes:
-            logger.error("ပုံဖိုင် အလွတ်ဖြစ်နေပါသည်။")
-            return False
+        if not content:
+            logger.error("Downloaded photo is empty")
+            return None
 
-        if len(image_bytes) > MAX_IMAGE_SIZE:
-            logger.warning("ပုံဖိုင် အရွယ်အစား ကန့်သတ်ချက် ကျော်နေပါသည်။")
-            return False
+        if len(content) > MAX_IMAGE_SIZE:
+            logger.warning("Photo exceeds size limit")
+            return None
 
-        filename = f"telegram_{message.message_id}.jpg"
-
-        return await check_nsfw_file(
-            image_bytes=image_bytes,
-            filename=filename,
-        )
+        return content
 
     except asyncio.CancelledError:
         raise
+
     except Exception:
-        logger.exception("Telegram ပုံကို download လုပ်မရပါ။")
-        return False
+        logger.exception("Photo download failed")
+        return None
+
     finally:
         buffer.close()
 
 
-# =========================================================
-# DELETE BUTTONS
-# =========================================================
+async def check_photo_message(message: Message) -> bool:
+    content = await download_photo(message)
 
-def make_delete_keyboard(token: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🗑️ ပို့စ်ဖျက်ရန်",
-                    callback_data=f"delete:{token}",
-                )
-            ]
-        ]
+    if content is None:
+        return False
+
+    return await check_nsfw_file(
+        content,
+        filename=f"telegram_{message.message_id}.jpg",
     )
 
 
-def register_post(
-    owner_id: int,
-    message_ids: list[int],
-) -> str:
+# =========================================================
+# STATUS / DELETE BUTTONS
+# =========================================================
+
+async def delete_status_message(message: Message | None):
+    if message is None:
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        logger.warning(
+            "Could not delete temporary status message"
+        )
+
+
+def make_delete_keyboard(token: str):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="🗑️ ပို့စ်ဖျက်ရန်",
+                callback_data=f"delete:{token}",
+            )
+        ]]
+    )
+
+
+def register_post(owner_id: int, message_ids: list[int]):
     token = uuid.uuid4().hex[:12]
 
     post_registry[token] = {
@@ -525,6 +411,26 @@ def register_post(
     return token
 
 
+async def send_success(
+    message: Message,
+    owner_id: int,
+    channel_message_ids: list[int],
+):
+    token = register_post(
+        owner_id,
+        channel_message_ids,
+    )
+
+    await message.answer(
+        SUCCESS_TEXT,
+        reply_markup=make_delete_keyboard(token),
+    )
+
+
+async def send_rejection(message: Message):
+    await message.answer(REJECT_TEXT)
+
+
 @router.callback_query(F.data.startswith("delete:"))
 async def delete_post_callback(callback: CallbackQuery):
     token = callback.data.split(":", 1)[1]
@@ -532,14 +438,14 @@ async def delete_post_callback(callback: CallbackQuery):
 
     if not record:
         await callback.answer(
-            "ဒီပို့စ်ကို ဖျက်ရန် အချက်အလက် မတွေ့ပါ။",
+            "ဖျက်ရန် ပို့စ်အချက်အလက် မတွေ့ပါ။",
             show_alert=True,
         )
         return
 
     if callback.from_user.id != record["owner_id"]:
         await callback.answer(
-            "ဒီပို့စ်ကို တင်ခဲ့သူသာ ဖျက်နိုင်ပါတယ်။",
+            "ပို့စ်တင်ခဲ့သူသာ ဖျက်နိုင်ပါတယ်။",
             show_alert=True,
         )
         return
@@ -555,49 +461,18 @@ async def delete_post_callback(callback: CallbackQuery):
         except Exception:
             failed = True
             logger.exception(
-                "Channel post ဖျက်မရပါ: %s",
+                "Failed to delete channel message %s",
                 message_id,
             )
 
-    if not failed:
-        post_registry.pop(token, None)
-        await callback.answer("✅ ပို့စ်ကို ဖျက်ပြီးပါပြီ။")
-    else:
+    if failed:
         await callback.answer(
-            "⚠️ ပို့စ်တချို့ကို ဖျက်မရပါ။ Bot ရဲ့ Channel Admin ခွင့်ပြုချက်ကို စစ်ပါ။",
+            "ဖျက်မရပါ။ Bot ရဲ့ Channel Admin ခွင့်ကို စစ်ပါ။",
             show_alert=True,
         )
-
-
-# =========================================================
-# MESSAGE HELPERS
-# =========================================================
-
-async def delete_status_message(status_message: Message | None):
-    if not status_message:
-        return
-
-    try:
-        await status_message.delete()
-    except Exception:
-        logger.debug("Status message ဖျက်မရပါ။", exc_info=True)
-
-
-async def send_rejection(message: Message):
-    await message.answer(REJECT_TEXT)
-
-
-async def send_success(
-    message: Message,
-    owner_id: int,
-    channel_message_ids: list[int],
-):
-    token = register_post(owner_id, channel_message_ids)
-
-    await message.answer(
-        SUCCESS_TEXT,
-        reply_markup=make_delete_keyboard(token),
-    )
+    else:
+        post_registry.pop(token, None)
+        await callback.answer("ပို့စ်ကို ဖျက်ပြီးပါပြီ။")
 
 
 # =========================================================
@@ -608,8 +483,9 @@ async def send_success(
 async def start_handler(message: Message):
     await message.answer(
         "မင်္ဂလာပါရှင့်။ 📬\n\n"
-        "Mailbox မှာ စာသား၊ ပုံနဲ့ Album ပုံတွေ ပေးပို့နိုင်ပါတယ်။\n"
-        "မသင့်လျော်တဲ့ စကားလုံးနဲ့ ပုံတွေကို စစ်ဆေးပြီးမှ Channel ကို တင်ပေးပါမယ်။"
+        "Mailbox မှာ စာသား၊ ပုံနဲ့ Album ပုံတွေ "
+        "ပေးပို့နိုင်ပါတယ်။\n"
+        "ပုံတွေကို စစ်ဆေးပြီးမှ Channel သို့ တင်ပေးပါမယ်။"
     )
 
 
@@ -621,6 +497,9 @@ async def start_handler(message: Message):
 async def text_handler(message: Message):
     text_content = message.text or ""
 
+    if text_content.startswith("/"):
+        return
+
     if contains_bad_word(text_content):
         await message.answer(
             "⚠️ မသင့်လျော်သော စကားလုံးများ ပါဝင်နေသောကြောင့် "
@@ -629,10 +508,6 @@ async def text_handler(message: Message):
         return
 
     try:
-        # Bot command များကို Channel သို့ မတင်ပါ
-        if text_content.startswith("/"):
-            return
-
         sent = await bot.send_message(
             chat_id=CHANNEL_ID,
             text=text_content,
@@ -645,23 +520,22 @@ async def text_handler(message: Message):
         )
 
     except Exception:
-        logger.exception("Text post တင်ရာတွင် အမှားဖြစ်နေပါသည်။")
+        logger.exception("Text post failed")
         await message.answer(
             "⚠️ ပို့စ်ကို Channel သို့ တင်မရပါ။ "
-            "Bot ကို Channel Admin ပေးထားခြင်းရှိ၊ မရှိ စစ်ဆေးပေးပါ။"
+            "Bot ရဲ့ Channel Admin ခွင့်ကို စစ်ပေးပါ။"
         )
 
 
 # =========================================================
-# SINGLE PHOTO POSTS
+# SINGLE PHOTO
 # =========================================================
 
 @router.message(F.photo, ~F.media_group_id)
 async def single_photo_handler(message: Message):
-    status_message = None
+    status = None
 
     try:
-        # Caption ပါရင် စကားလုံးကိုလည်း အရင်စစ်ပါ
         if contains_bad_word(message.caption):
             await message.answer(
                 "⚠️ မသင့်လျော်သော စကားလုံးများ ပါဝင်နေသောကြောင့် "
@@ -669,41 +543,32 @@ async def single_photo_handler(message: Message):
             )
             return
 
-        status_message = await message.answer(CHECKING_TEXT)
+        status = await message.answer(CHECKING_TEXT)
 
         accepted = await check_photo_message(message)
 
-        await delete_status_message(status_message)
-        status_message = None
+        await delete_status_message(status)
+        status = None
 
         if not accepted:
             await send_rejection(message)
             return
 
-        buffer = io.BytesIO()
-        await bot.download(
-            file=message.photo[-1],
-            destination=buffer,
-        )
+        content = await download_photo(message)
 
-        image_bytes = buffer.getvalue()
-        buffer.close()
-
-        if not image_bytes:
+        if content is None:
             await send_rejection(message)
             return
 
         token = uuid.uuid4().hex[:12]
-        markup = make_delete_keyboard(token)
 
         sent = await bot.send_photo(
             chat_id=CHANNEL_ID,
             photo=BufferedInputFile(
-                image_bytes,
+                content,
                 filename=f"mailbox_{message.message_id}.jpg",
             ),
             caption=message.caption or None,
-            reply_markup=markup,
         )
 
         post_registry[token] = {
@@ -718,28 +583,27 @@ async def single_photo_handler(message: Message):
 
     except asyncio.CancelledError:
         raise
+
     except Exception:
-        logger.exception("Single photo handler အမှား")
+        logger.exception("Single photo processing failed")
+        await delete_status_message(status)
 
-        await delete_status_message(status_message)
-
-        try:
-            await message.answer(
-                "⚠️ ပုံကို စစ်ဆေးခြင်း သို့မဟုတ် Channel သို့ တင်ခြင်း "
-                "မအောင်မြင်ပါ။ ထပ်မံကြိုးစားပေးပါ။"
-            )
-        except Exception:
-            logger.exception("Error message ပို့မရပါ။")
+        await message.answer(
+            "⚠️ ပုံကို စစ်ဆေးခြင်း သို့မဟုတ် Channel သို့ "
+            "တင်ခြင်း မအောင်မြင်ပါ။"
+        )
 
 
 # =========================================================
-# ALBUM COLLECTION
+# ALBUM COLLECTOR
 # =========================================================
 
 @router.message(F.photo, F.media_group_id)
 async def album_photo_handler(message: Message):
-    group_id = message.media_group_id
-    key = (message.chat.id, group_id)
+    key = (
+        message.chat.id,
+        message.media_group_id,
+    )
 
     async with album_lock:
         state = album_states.get(key)
@@ -754,13 +618,11 @@ async def album_photo_handler(message: Message):
                 )
             except Exception:
                 logger.exception(
-                    "Album checking message ပို့မရပါ။"
+                    "Could not send album checking message"
                 )
 
         state.messages.append(message)
 
-        # Album ရဲ့ နောက်ဆုံးပုံရောက်ပြီးနောက် အချိန်တိုအတွင်း
-        # ထပ်မံရောက်လာနိုင်သောပုံများကို စုဆောင်းရန်
         if state.task and not state.task.done():
             state.task.cancel()
 
@@ -783,107 +645,117 @@ async def process_album_after_delay(key):
                 state.messages,
                 key=lambda item: item.message_id,
             )
-            status_message = state.status_message
+            status = state.status_message
 
-            # Processing စတင်ချိန်မှာ state ကို ဖယ်ထားပါ
             album_states.pop(key, None)
 
-        await process_album(
-            messages=messages,
-            status_message=status_message,
-        )
+        await process_album(messages, status)
 
     except asyncio.CancelledError:
-        # နောက်ပုံတစ်ပုံ ထပ်ရောက်လာလျှင် timer ကို ပြန်စမည်
+        # နောက်ထပ် Album ပုံရောက်လာရင် timer ပြန်စမည်
         raise
+
     except Exception:
-        logger.exception("Album စုဆောင်းမှု အမှား")
-        state = album_states.pop(key, None)
+        logger.exception("Album collection failed")
+
+        async with album_lock:
+            state = album_states.pop(key, None)
 
         if state:
-            await delete_status_message(state.status_message)
+            await delete_status_message(
+                state.status_message
+            )
 
+
+# =========================================================
+# ALBUM PROCESSING
+# =========================================================
 
 async def process_album(
     messages: list[Message],
-    status_message: Message | None,
+    status: Message | None,
 ):
     if not messages:
-        await delete_status_message(status_message)
+        await delete_status_message(status)
         return
 
     owner_message = messages[0]
     owner_id = owner_message.from_user.id
 
     try:
-        if len(messages) > ALBUM_MAX_PHOTOS:
-            await delete_status_message(status_message)
+        if len(messages) < 2 or len(messages) > MAX_ALBUM_PHOTOS:
+            await delete_status_message(status)
             await owner_message.answer(
-                "⚠️ Album တစ်ခုတွင် ပုံ ၁၀ ပုံထက်ပို၍ "
-                "လက်မခံပါ။"
+                "⚠️ Album ပုံအရေအတွက် မမှန်ပါ။ "
+                "ပုံ ၂ ပုံမှ ၁၀ ပုံအတွင်း ပေးပို့ပါ။"
             )
             return
 
-        # Album အတွင်း Caption ပါသော message ကို ရှာပါ
-        caption = ""
-
-        for item in messages:
-            if item.caption:
-                caption = item.caption
-                break
+        caption = next(
+            (
+                item.caption
+                for item in messages
+                if item.caption
+            ),
+            None,
+        )
 
         if contains_bad_word(caption):
-            await delete_status_message(status_message)
+            await delete_status_message(status)
             await owner_message.answer(
                 "⚠️ မသင့်လျော်သော စကားလုံးများ ပါဝင်နေသောကြောင့် "
                 "ပို့စ်ကို Channel သို့ မတင်ထားပါ။"
             )
             return
 
-        # ပုံအားလုံးကို စစ်ပြီးမှ Channel သို့ တင်မည်
-        image_data = []
+        prepared_images = []
 
+        # ပုံအားလုံးကို စစ်ပြီးမှ တင်မည်
         for item in messages:
-            accepted = await check_photo_message(item)
+            content = await download_photo(item)
 
-            if not accepted:
-                await delete_status_message(status_message)
+            if content is None:
+                await delete_status_message(status)
                 await send_rejection(owner_message)
                 return
 
-            buffer = io.BytesIO()
-
-            await bot.download(
-                file=item.photo[-1],
-                destination=buffer,
+            accepted = await check_nsfw_file(
+                content,
+                filename=f"album_{item.message_id}.jpg",
             )
 
-            content = buffer.getvalue()
-            buffer.close()
-
-            if not content:
-                await delete_status_message(status_message)
+            if not accepted:
+                logger.warning(
+                    "Album photo rejected: message_id=%s",
+                    item.message_id,
+                )
+                await delete_status_message(status)
                 await send_rejection(owner_message)
                 return
 
-            image_data.append(
+            prepared_images.append(
                 (
                     content,
-                    f"mailbox_{item.message_id}.jpg",
+                    f"album_{item.message_id}.jpg",
                 )
             )
 
-        # Sightengine စစ်ဆေးမှုအားလုံး အောင်မြင်ပြီးပါက တင်မည်
         media = []
 
-        for index, (content, filename) in enumerate(image_data):
+        for index, (content, filename) in enumerate(
+            prepared_images
+        ):
             media.append(
                 InputMediaPhoto(
                     media=BufferedInputFile(
                         content,
                         filename=filename,
                     ),
-                    caption=caption if index == 0 and caption else None,
+                    caption=(
+                        caption
+                        if index == 0 and caption
+                        else None
+                    ),
                 )
             )
 
@@ -892,49 +764,46 @@ async def process_album(
             media=media,
         )
 
-        channel_message_ids = [
-            item.message_id for item in sent_messages
+        channel_ids = [
+            item.message_id
+            for item in sent_messages
         ]
 
-        await delete_status_message(status_message)
+        await delete_status_message(status)
 
         await send_success(
             message=owner_message,
             owner_id=owner_id,
-            channel_message_ids=channel_message_ids,
+            channel_message_ids=channel_ids,
         )
 
     except asyncio.CancelledError:
         raise
+
     except Exception:
-        logger.exception("Album processing အမှား")
+        logger.exception("Album processing failed")
+        await delete_status_message(status)
 
-        await delete_status_message(status_message)
-
-        try:
-            await owner_message.answer(
-                "⚠️ Album ကို စစ်ဆေးခြင်း သို့မဟုတ် Channel သို့ "
-                "တင်ခြင်း မအောင်မြင်ပါ။ ထပ်မံကြိုးစားပေးပါ။"
-            )
-        except Exception:
-            logger.exception("Album error message ပို့မရပါ။")
+        await owner_message.answer(
+            "⚠️ Album ကို စစ်ဆေးခြင်း သို့မဟုတ် Channel သို့ "
+            "တင်ခြင်း မအောင်မြင်ပါ။"
+        )
 
 
 # =========================================================
-# RENDER HEALTH CHECK SERVER
+# RENDER WEB SERVER
 # =========================================================
 
 async def health_handler(request):
-    return web.json_response(
-        {
-            "status": "ok",
-            "service": "Telegram Mailbox Bot",
-        }
-    )
+    return web.json_response({
+        "status": "ok",
+        "service": "Telegram Mailbox Bot",
+    })
 
 
 async def run_web_server():
     app = web.Application()
+
     app.router.add_get("/", health_handler)
     app.router.add_get("/health", health_handler)
 
@@ -943,40 +812,40 @@ async def run_web_server():
 
     site = web.TCPSite(
         runner,
-        host="0.0.0.0",
-        port=PORT,
+        "0.0.0.0",
+        PORT,
     )
 
     await site.start()
 
     logger.info("Web server started on port %s", PORT)
 
-    # Server ကို အသက်ရှင်နေစေရန်
     await asyncio.Event().wait()
 
 
 # =========================================================
-# START BOT
+# MAIN
 # =========================================================
 
 async def main():
-    required = {
-        "SIGHTENGINE_API_USER": SIGHTENGINE_API_USER,
-        "SIGHTENGINE_API_SECRET": SIGHTENGINE_API_SECRET,
-        "SIGHTENGINE_WORKFLOW_ID": SIGHTENGINE_WORKFLOW_ID,
-    }
+    missing = []
 
-    missing = [
-        name for name, value in required.items() if not value
-    ]
+    if not SIGHTENGINE_API_USER:
+        missing.append("SIGHTENGINE_API_USER")
+
+    if not SIGHTENGINE_API_SECRET:
+        missing.append("SIGHTENGINE_API_SECRET")
+
+    if not SIGHTENGINE_WORKFLOW_ID:
+        missing.append("SIGHTENGINE_WORKFLOW_ID")
 
     if missing:
-        logger.warning(
-            "Render Environment Variables မပြည့်စုံပါ: %s",
+        logger.error(
+            "Missing Sightengine Environment Variables: %s",
             ", ".join(missing),
         )
 
-    logger.info("Telegram Mailbox Bot စတင်နေပါသည်။")
+    logger.info("Telegram Mailbox Bot starting")
     logger.info("Channel: %s", CHANNEL_ID)
 
     await asyncio.gather(
@@ -992,4 +861,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot ရပ်တန့်လိုက်ပါပြီ။")
+        logger.info("Bot stopped")
