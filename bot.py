@@ -47,7 +47,7 @@ def find_bad_word(text: str) -> str:
             return word
     return None
 
-# Sightengine ဖြင့် ပုံကို သေချာတိကျစွာ စစ်ဆေးခြင်း
+# Sightengine ဖြင့် ပုံကို အထူးတင်းကြပ်စွာ စစ်ဆေးခြင်း (Fail-safe ပါဝင်သည်)
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_USER or not SIGHTENGINE_SECRET:
         return False
@@ -66,10 +66,15 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                 print(f"Sightengine Response: {res_data}")
                 if res_data.get('status') == 'success':
                     nudity = res_data.get('nudity', {})
-                    # safe နှုန်းက 0.5 (50%) အောက် လျော့သွားရင် (သို့မဟုတ်) ညစ်ညမ်းမှု ပါလာရင် တားမည်
+                    raw_score = nudity.get('raw', 0.0)
+                    partial_score = nudity.get('partial', 0.0)
                     safe_score = nudity.get('safe', 1.0)
-                    if safe_score < 0.6:
+                    
+                    # ညစ်ညမ်းမှု အနည်းငယ်ပါတာနဲ့ (သို့မဟုတ် safe score 0.9 ထက်နည်းရင်) တားမည်
+                    if raw_score > 0.02 or partial_score > 0.05 or safe_score < 0.90:
                         return True
+                else:
+                    print(f"Sightengine API Error: {res_data}")
     except Exception as e:
         print(f"NSFW File Check Error: {e}")
     return False
