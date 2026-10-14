@@ -4,7 +4,6 @@ import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Render ရဲ့ Environment Variables ကနေ လုံခြုံစွာ ယူသုံးခြင်း
@@ -41,10 +40,10 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-# Bytes ဖြင့် ပုံကို အထူးတင်းကြပ်စွာ စစ်ဆေးခြင်း (Fail-closed စနစ်)
+# ပုံမှန်ပုံများကို မှားယွင်းတားဆီးမှုမရှိစေရန် Threshold အသဖြင့် စစ်ဆေးခြင်း
 async def check_nsfw_file(file_bytes: bytes) -> bool:
     if not SIGHTENGINE_API_USER or not SIGHTENGINE_API_SECRET:
-        return True
+        return False
         
     try:
         url = 'https://api.sightengine.com/1.0/check.json'
@@ -65,13 +64,14 @@ async def check_nsfw_file(file_bytes: bytes) -> bool:
                     raw_score = nudity.get('raw', 0.0)
                     partial_score = nudity.get('partial', 0.0)
                     
-                    if safe_score < 0.99 or raw_score > 0.0 or partial_score > 0.0:
+                    # Safe score 0.4 အောက်ရောက်မှသာ သို့မဟုတ် ထင်ရှားသော nudity ပမာဏများမှသာ တားဆီးမည်
+                    if safe_score < 0.4 or raw_score > 0.5 or partial_score > 0.6:
                         return True
                 else:
-                    return True
+                    return False
     except Exception as e:
         print(f"NSFW File Check Exception: {e}")
-        return True
+        return False
         
     return False
 
