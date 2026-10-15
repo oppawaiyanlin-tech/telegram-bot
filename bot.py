@@ -3,6 +3,8 @@ import io
 import os
 import uuid
 import logging
+import sqlite3
+from pathlib import Path
 from dataclasses import dataclass, field
 
 import aiohttp
@@ -39,6 +41,9 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip() or "ge
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 PORT = int(os.getenv("PORT", "10000"))
+# Configure a Render persistent disk mounted at /var/data to preserve AI mode
+# across service restarts and deployments.
+AI_STATE_DB_PATH = os.getenv("AI_STATE_DB_PATH", "/var/data/ai_state.db").strip() or "/var/data/ai_state.db"
 MAX_IMAGE_SIZE = 15 * 1024 * 1024
 MAX_ALBUM_PHOTOS = 10
 ALBUM_DEBOUNCE_SECONDS = 1.5
@@ -246,6 +251,46 @@ ai_sessions: dict[int, list[dict[str, str]]] = {}
 ai_active_users: set[int] = set()
 ai_locks: dict[int, asyncio.Lock] = {}
 
+def _state_db_path() -> str:
+    """Use Render's persistent disk when mounted; otherwise use local app storage."""
+    preferred = Path(AI_STATE_DB_PATH)
+    try:
+        preferred.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(preferred)) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS ai_active_users (user_id INTEGER PRIMARY KEY)")
+        return str(preferred)
+    except Exception:
+        fallback = Path(__file__).resolve().parent / "ai_state.db"
+        with sqlite3.connect(str(fallback)) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS ai_active_users (user_id INTEGER PRIMARY KEY)")
+        logger.warning("Persistent AI state path unavailable; using local fallback %s", fallback)
+        return str(fallback)
+
+AI_STATE_DB = _state_db_path()
+
+def load_ai_active_users() -> None:
+    try:
+        with sqlite3.connect(AI_STATE_DB) as conn:
+            rows = conn.execute("SELECT user_id FROM ai_active_users").fetchall()
+        ai_active_users.update(int(row[0]) for row in rows)
+        logger.info("Restored %s active AI chat sessions", len(ai_active_users))
+    except Exception:
+        logger.exception("Could not restore active AI sessions")
+
+def set_ai_active(user_id: int, active: bool) -> None:
+    if active:
+        ai_active_users.add(user_id)
+    else:
+        ai_active_users.discard(user_id)
+    try:
+        with sqlite3.connect(AI_STATE_DB) as conn:
+            if active:
+                conn.execute("INSERT OR IGNORE INTO ai_active_users(user_id) VALUES (?)", (user_id,))
+            else:
+                conn.execute("DELETE FROM ai_active_users WHERE user_id = ?", (user_id,))
+    except Exception:
+        logger.exception("Could not save AI active state for user %s", user_id)
+
 
 @dataclass
 class AlbumState:
@@ -356,22 +401,24 @@ async def ai_start_handler(message: Message):
         return
 
     user_id = message.from_user.id
+    # Activate first so a missing/temporarily failing AI API can never cause
+    # the user's next messages to be accidentally published to the channel.
+    set_ai_active(user_id, True)
+    ai_sessions.setdefault(user_id, [])
     if not GEMINI_API_KEY:
         await message.answer(
-            "⚠️ AI စနစ်ကို မဖွင့်ရသေးပါ။ Admin က Render Environment မှာ "
-            "GEMINI_API_KEY ထည့်သွင်းပေးရန် လိုအပ်ပါတယ်။"
+            "⚠️ AI Chatbox ကို ဖွင့်ထားပါတယ်၊ ဒါပေမဲ့ AI API key မရှိသေးလို့ "
+            "လောလောဆယ် အဖြေမပေးနိုင်ပါ။ /cancel မနှိပ်မချင်း သင့်စာတွေကို "
+            "Channel သို့ မတင်ပါဘူး။ Admin ကို ဆက်သွယ်ပါ။"
         )
         return
-
-    ai_active_users.add(user_id)
-    ai_sessions.setdefault(user_id, [])
     await message.answer(AI_WELCOME_TEXT)
 
 
 @router.message(Command("cancel", "stop"))
 async def ai_cancel_handler(message: Message):
     if message.from_user:
-        ai_active_users.discard(message.from_user.id)
+        set_ai_active(message.from_user.id, False)
     await message.answer(
         "🛑 AI Chat ကို ပိတ်လိုက်ပါပြီ။\n"
         "ယခုမှစပြီး စာသားပို့လျှင် Mailbox Channel သို့ ပုံမှန်တင်နိုင်ပါပြီ။\n"
@@ -716,6 +763,12 @@ async def single_photo_handler(message: Message):
             await send_rejection(message)
             return
 
+        # Re-check immediately before publishing in case /ai was enabled while
+        # moderation/download was in progress.
+        if message.from_user and message.from_user.id in ai_active_users:
+            await message.answer("🤖 AI Chat ဖွင့်ထားပါတယ်။ /cancel မနှိပ်မချင်း ပုံကို Channel သို့ မတင်ပါဘူး။")
+            return
+
         token = uuid.uuid4().hex[:12]
         sent = await bot.send_photo(
             chat_id=CHANNEL_ID,
@@ -853,6 +906,13 @@ async def process_album(messages: list[Message], status: Message | None):
                 )
             )
 
+        # Re-check immediately before publishing in case AI was enabled while
+        # the album was being collected or moderated.
+        if owner_id in ai_active_users:
+            await delete_status_message(status)
+            await owner_message.answer("🤖 AI Chat ဖွင့်ထားပါတယ်။ /cancel မနှိပ်မချင်း Album ကို Channel သို့ မတင်ပါဘူး။")
+            return
+
         sent_messages = await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
         channel_ids = [item.message_id for item in sent_messages]
         await delete_status_message(status)
@@ -920,6 +980,7 @@ async def main():
     if missing:
         logger.error("Missing Sightengine Environment Variables: %s", ", ".join(missing))
 
+    load_ai_active_users()
     logger.info("Telegram Mailbox Bot starting")
     logger.info("Channel: %s", CHANNEL_ID)
 
