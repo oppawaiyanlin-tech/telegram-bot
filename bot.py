@@ -21,6 +21,7 @@ from aiogram.types import (
     InputMediaPhoto,
     BotCommand,
     MenuButtonCommands,
+    ChatMemberUpdated,
 )
 
 # =========================================================
@@ -29,6 +30,7 @@ from aiogram.types import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@ydbumailbox").strip()
+BOT_OWNER_ID = os.getenv("BOT_OWNER_ID", "").strip()
 
 SIGHTENGINE_API_USER = os.getenv("SIGHTENGINE_API_USER", "").strip()
 SIGHTENGINE_API_SECRET = os.getenv("SIGHTENGINE_API_SECRET", "").strip()
@@ -238,6 +240,51 @@ if not CHANNEL_ID:
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# Only the configured official mailbox channel is allowed. If someone adds the
+# bot to another group/channel, notify the owner (if configured) and leave.
+_ALLOWED_CHANNEL_NUMERIC_ID = None
+
+
+@dp.my_chat_member()
+async def protect_bot_from_other_chats(event: ChatMemberUpdated):
+    global _ALLOWED_CHANNEL_NUMERIC_ID
+    new_status = event.new_chat_member.status
+    if new_status not in {"member", "administrator", "restricted"}:
+        return
+
+    chat_id = event.chat.id
+    if _ALLOWED_CHANNEL_NUMERIC_ID is None:
+        try:
+            official_chat = await bot.get_chat(CHANNEL_ID)
+            _ALLOWED_CHANNEL_NUMERIC_ID = official_chat.id
+        except Exception:
+            logger.exception("Could not resolve official CHANNEL_ID; leaving non-resolved chat for safety")
+            # If target channel cannot be resolved, do not assume this chat is safe.
+            _ALLOWED_CHANNEL_NUMERIC_ID = 0
+
+    if chat_id == _ALLOWED_CHANNEL_NUMERIC_ID:
+        logger.info("Bot membership update in the configured official channel: %s", chat_id)
+        return
+
+    chat_title = event.chat.title or event.chat.username or str(chat_id)
+    logger.warning("Bot was added to an unapproved chat %s (%s); attempting to leave", chat_title, chat_id)
+    if BOT_OWNER_ID.isdigit():
+        try:
+            await bot.send_message(
+                chat_id=int(BOT_OWNER_ID),
+                text=(
+                    "⚠️ Bot ကို ခွင့်မပြုထားတဲ့ Group/Channel တစ်ခုမှာ ထည့်ထားတာ တွေ့ရှိပါတယ်။\n"
+                    f"အမည်: {chat_title}\nChat ID: {chat_id}\n"
+                    "လုံခြုံရေးအတွက် အဲဒီနေရာကနေ အလိုအလျောက် ထွက်ရန် ကြိုးစားနေပါတယ်။"
+                ),
+            )
+        except Exception:
+            logger.exception("Could not notify BOT_OWNER_ID")
+    try:
+        await bot.leave_chat(chat_id=chat_id)
+    except Exception:
+        logger.exception("Could not leave unapproved chat %s", chat_id)
 router = Router()
 dp.include_router(router)
 
@@ -303,11 +350,20 @@ class AlbumState:
 # BAD WORD CHECK
 # =========================================================
 
-def contains_bad_word(text: str | None) -> bool:
+def find_bad_word(text: str | None) -> str | None:
+    """Return the first matched prohibited word, for a clear moderation notice."""
     if not text:
-        return False
+        return None
     normalized = text.casefold()
-    return any(word.casefold() in normalized for word in BAD_WORDS)
+    for word in BAD_WORDS:
+        if word.casefold() in normalized:
+            return word
+    return None
+
+
+def contains_bad_word(text: str | None) -> bool:
+    # Keep this helper for any existing call sites that only need True/False.
+    return find_bad_word(text) is not None
 
 
 # =========================================================
@@ -708,10 +764,11 @@ async def text_handler(message: Message):
         await process_ai_text(message)
         return
 
-    if contains_bad_word(text_content):
+    matched_word = find_bad_word(text_content)
+    if matched_word:
         await message.answer(
-            "⚠️ မသင့်လျော်သော စကားလုံးများ ပါဝင်နေသောကြောင့် "
-            "ပို့စ်ကို Channel သို့ မတင်ထားပါ။"
+            f"⚠️ မသင့်လျော်သော စကားလုံး({matched_word}) ပါဝင်နေသောကြောင့် "
+            "ပို့စ်ကို Channel သို့ မတင်ပေးပါ။"
         )
         return
 
@@ -742,10 +799,11 @@ async def single_photo_handler(message: Message):
 
     status = None
     try:
-        if contains_bad_word(message.caption):
+        matched_word = find_bad_word(message.caption)
+        if matched_word:
             await message.answer(
-                "⚠️ မသင့်လျော်သော စကားလုံးများ ပါဝင်နေသောကြောင့် "
-                "ပို့စ်ကို Channel သို့ မတင်ထားပါ။"
+                f"⚠️ မသင့်လျော်သော စကားလုံး({matched_word}) ပါဝင်နေသောကြောင့် "
+                "ပို့စ်ကို Channel သို့ မတင်ပေးပါ။"
             )
             return
 
@@ -869,11 +927,12 @@ async def process_album(messages: list[Message], status: Message | None):
             return
 
         caption = next((item.caption for item in messages if item.caption), None)
-        if contains_bad_word(caption):
+        matched_word = find_bad_word(caption)
+        if matched_word:
             await delete_status_message(status)
             await owner_message.answer(
-                "⚠️ မသင့်လျော်သော စကားလုံးများ ပါဝင်နေသောကြောင့် "
-                "ပို့စ်ကို Channel သို့ မတင်ထားပါ။"
+                f"⚠️ မသင့်လျော်သော စကားလုံး({matched_word}) ပါဝင်နေသောကြောင့် "
+                "ပို့စ်ကို Channel သို့ မတင်ပေးပါ။"
             )
             return
 
@@ -983,6 +1042,8 @@ async def main():
     load_ai_active_users()
     logger.info("Telegram Mailbox Bot starting")
     logger.info("Channel: %s", CHANNEL_ID)
+    if not BOT_OWNER_ID.isdigit():
+        logger.warning("BOT_OWNER_ID is not configured; unauthorized-chat alerts will not be sent")
 
     try:
         await setup_bot_commands()
