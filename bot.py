@@ -200,9 +200,8 @@ and otherwise use the user's language. You are a text-only assistant in this bot
 """.strip()
 
 BAD_WORDS = list(dict.fromkeys([
-    # General substring rules: these terms are caught wherever they appear.
-    "လိုး", "လီး", "ငါလိုးမ", "စောက်ဖုတ်ပြဲမ",
-    "မသာမ", "ဖာသည်မ", "ခွေးမသား", "လီးပဲ",
+    "ငါလိုးမ", "လီး", "စက်ပက်", "စောက်ဖုတ်", "စောက်ဖုတ်ပြဲမ",
+    "မသာမ", "ဖာသည်မ", "မအေလိုး", "ခွေးမသား", "လီးပဲ",
     "ကိုယ်မေကိုလိုး", "နှမလိုး", "ငါလိုးမသား", "မင်းညီမငါလိုး",
     "မင်းအမေငါလိုး", "တစ်ဆွေလုံးတစ်မျိုးလုံးငါလိုး", "kmkl",
     "mal", "lee", "leee", "leeee", "စပ", "ခွေးတတောင်းစားမ",
@@ -213,24 +212,17 @@ BAD_WORDS = list(dict.fromkeys([
     "ဂွေးဥ", "ဂွေးစိ", "နို့စို့ချင်တယ်", "နို့ကိုင်ချင်တယ်",
     "fuck", "shit", "bitch", "asshole", "ချေးပါ", "နှာဘူး",
     "စမူဆာ", "အီးပါ", "ခွေးမ", "ခွေးသူတောင်းစား", "ဆပ္ပတ်",
-    "ဖင်လျက်", "ဖာခေါင်း", "ဖာမ", "အမေလိုး",
-    "အခြောက်", "ထဘီခြုံ", "ငါလိုး", "ခွေးလိုး",
+    "ဖင်လျက်", "ဖာခေါင်း", "ဖာမ", "ဘောမ", "အမေလိုး", "မအလ",
+    "အခြောက်", "ထဘီခြုံ", "ငါလိုး", "ခွေးလိုး", "ချီးထုတ်",
     "လီးစား", "လီးဘဲ", "လီးစုပ့", "လိုးမ", "မေလိုး",
     "မင်းမေစက်ပက်", "မင်းမေမင်းလိုး", "ဖေလိုးမ", "ဖေလိုး",
     "အဖေလိုး", "စောက်ပက်စား", "စောက်ကောင်", "စောက်ကောင်မ",
     "စောက်ချီးစား", "ချီးလိုပဲ", "သုတ်ကောင်", "တုတ်ကြောင်မ",
-    "သေခြင်းဆိုး", "ကုလားနာ", "သေနာကောင်",
+    "သေခြင်းဆိုး", "ကုလားနာ", "သေနာကောင်", "ဖွတ်ကျား",
     "စောက်ရူး", "သေဂျင်းဇိုးလေး", "စောက်မွှေး", "လီးပြဲ",
-    "ဖာသည်", "ငါ့ဒစ်စုပ်",
-
-    # Exact-space variants: the spaces shown here are significant.
-    "စက် ပက်", "စက်   ပက်", "စက်       ပက်", "စက်        ပက်",
-    "စောက် ဖုတ်", "စောက်  ဖုတ်", "စောက်    ဖုတ်", "စောက်       ဖုတ်",
-    "မ အေ လိုး",
-    "အီးစား", "အီးတုံး", "ချီး ထုတ်", "ဖွတ် ကြား",
-    "ဘော မ", "ဘော  မ", "ဘော   မ",
-    "မ  အ  လ",
-    "ဒစ် စုပ်", "ဒစ်    စုပ်",
+    "ဖာသည်", "ဒစ်စုပ်", "ငါ့ဒစ်စုပ်",
+    "ဒစ်စုတ်",
+    "လိုး",
 ]))
 
 # =========================================================
@@ -360,30 +352,37 @@ class AlbumState:
 # BAD WORD CHECK
 # =========================================================
 
-def _find_bad_word_occurrence(text: str, word: str) -> bool:
-    """Substring match, with a Burmese-specific guard against false positives.
+def _remove_spacing(value: str) -> str:
+    """Remove whitespace only, so split-up bad words match their joined form."""
+    return "".join(value.split())
 
-    A configured term such as ``လီး`` should match inside longer text such as
-    ``လီးပဲ`` or ``လီးလိုပဲ``. But a term such as ``စပ`` must not match ``စပ်``:
-    Burmese ASAT (်, U+103A) immediately after the matched term changes the
-    spelling, so that occurrence is ignored. Other substring matches remain
-    enabled as requested.
+
+def _find_bad_word_occurrence(text: str, word: str) -> bool:
+    """Match a configured bad word even if users insert spaces between parts.
+
+    Whitespace is ignored for matching (e.g. စောက်ဖုတ် matches စောက် ဖုတ်,
+    စောက်  ဖုတ်, and စောက်       ဖုတ်). Myanmar ASAT is NOT removed, so
+    စပ does not accidentally match စပ်. Terms such as လိုး are substring matches.
     """
+    normalized_text = _remove_spacing(text)
+    normalized_word = _remove_spacing(word)
+    if not normalized_word:
+        return False
+
     start = 0
     while True:
-        index = text.find(word, start)
+        index = normalized_text.find(normalized_word, start)
         if index < 0:
             return False
-        end = index + len(word)
-        # Myanmar ASAT after the match means this is a different spelling,
-        # e.g. BAD_WORDS contains "စပ" but the message contains "စပ်".
-        if end >= len(text) or text[end] != "်":
+        end = index + len(normalized_word)
+        # ASAT (်) changes the spelling: စပ must not match စပ်.
+        if end >= len(normalized_text) or normalized_text[end] != "်":
             return True
         start = index + 1
 
 
 def find_bad_word(text: str | None) -> str | None:
-    """Return the first prohibited substring, showing the matched bad word."""
+    """Return the configured bad-word label that matched the message."""
     if not text:
         return None
     normalized = text.casefold()
@@ -394,7 +393,6 @@ def find_bad_word(text: str | None) -> str | None:
 
 
 def contains_bad_word(text: str | None) -> bool:
-    # Keep this helper for any existing call sites that only need True/False.
     return find_bad_word(text) is not None
 
 
