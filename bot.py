@@ -877,10 +877,13 @@ async def run_web_server():
 # =========================================================
 
 async def setup_bot_commands():
-    # Show only the AI stop action in Telegram's command menu.
-    # /start, /ai, /stop and /clear handlers remain usable by typing commands.
+    # Keep the bot's normal commands available, with only one visible AI-stop command.
+    # /stop remains an alias for /cancel in the handler, but is not shown as a duplicate.
     await bot.set_my_commands([
+        BotCommand(command="start", description="Bot စတင်ရန်"),
+        BotCommand(command="ai", description="AI Chatbox ဖွင့်ရန်"),
         BotCommand(command="cancel", description="AI Chatbox ပိတ်ရန်"),
+        BotCommand(command="clear", description="AI စကားပြောမှတ်တမ်း ရှင်းရန်"),
     ])
     await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
 
