@@ -33,10 +33,10 @@ SIGHTENGINE_API_SECRET = os.getenv("SIGHTENGINE_API_SECRET", "").strip()
 SIGHTENGINE_WORKFLOW_ID = os.getenv("SIGHTENGINE_WORKFLOW_ID", "").strip()
 SIGHTENGINE_URL = "https://api.sightengine.com/1.0/check-workflow.json"
 
-# OpenAI / ChatGPT API
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.5").strip() or "gpt-5.5"
-OPENAI_API_URL = "https://api.openai.com/v1/responses"
+# Google Gemini API (Free Tier availability and limits depend on model/account)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip() or "gemini-3.5-flash-lite"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 PORT = int(os.getenv("PORT", "10000"))
 MAX_IMAGE_SIZE = 15 * 1024 * 1024
@@ -71,12 +71,10 @@ AI_SYSTEM_INSTRUCTION = """
 You are the AI assistant for Yadanabon University Mailbox.
 Your public-facing identity is "Yadanabon University Mailbox AI Assistant".
 When asked who you are, introduce yourself as the AI assistant for Yadanabon
-University Mailbox. Do not introduce yourself as OpenAI or make OpenAI your
+University Mailbox. Do not introduce yourself as Gemini or make Gemini your
 personal name. Do not falsely claim to be a human, a university employee, an
 official university authority, or to have verified university information
-unless it was supplied in the conversation. If the user directly asks which AI
-technology powers you, answer honestly that this assistant uses OpenAI's
-ChatGPT technology. Speak politely and helpfully. Respond in Burmese when
+unless it was supplied in the conversation. If the user directly asks which AI technology powers you, answer honestly that this assistant uses Google Gemini. Speak politely and helpfully. Respond in Burmese when
 the user writes Burmese, and otherwise use the user's language. Do not invent
 official university announcements, dates, fees, policies, or contact details;
 clearly say when you are unsure and recommend checking official sources.
@@ -157,7 +155,7 @@ def contains_bad_word(text: str | None) -> bool:
 
 
 # =========================================================
-# OPENAI / CHATGPT AI CHAT
+# GOOGLE GEMINI AI CHAT
 # =========================================================
 
 def get_ai_lock(user_id: int) -> asyncio.Lock:
@@ -175,79 +173,67 @@ def split_telegram_text(text: str, limit: int = 4000) -> list[str]:
     return [text[i:i + limit] for i in range(0, len(text), limit)]
 
 
-async def ask_openai(user_id: int, user_text: str) -> str:
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY မသတ်မှတ်ရသေးပါ။")
+async def ask_gemini(user_id: int, user_text: str) -> str:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY မသတ်မှတ်ရသေးပါ။")
 
     history = ai_sessions.setdefault(user_id, [])
     history.append({"role": "user", "content": user_text})
-
-    # Bound memory and request size; keep recent user/assistant messages.
     if len(history) > MAX_AI_HISTORY_MESSAGES:
         del history[:-MAX_AI_HISTORY_MESSAGES]
 
-    payload = {
-        "model": OPENAI_MODEL,
-        "instructions": AI_SYSTEM_INSTRUCTION,
-        "input": list(history),
-        "max_output_tokens": MAX_AI_OUTPUT_TOKENS,
-    }
+    # Gemini API uses "user" and "model" roles, unlike Gemini's "assistant".
+    contents = []
+    for item in history:
+        role = "model" if item.get("role") == "assistant" else "user"
+        contents.append({"role": role, "parts": [{"text": item.get("content", "")}]})
 
-    timeout = aiohttp.ClientTimeout(total=90)
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json",
+    payload = {
+        "systemInstruction": {"parts": [{"text": AI_SYSTEM_INSTRUCTION}]},
+        "contents": contents,
+        "generationConfig": {"maxOutputTokens": MAX_AI_OUTPUT_TOKENS, "temperature": 0.7},
     }
+    timeout = aiohttp.ClientTimeout(total=90)
+    url = GEMINI_API_URL.format(model=GEMINI_MODEL)
+    headers = {"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}
 
     try:
         data = None
-        # Retry temporary service/rate-limit errors with a short backoff.
         for attempt in range(3):
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(OPENAI_API_URL, json=payload, headers=headers) as response:
+                async with session.post(url, json=payload, headers=headers) as response:
                     raw = await response.text()
                     try:
                         data = await response.json(content_type=None)
                     except Exception:
-                        logger.error("OpenAI returned non-JSON response: %s", raw[:1000])
-                        raise RuntimeError("OpenAI API က မမှန်ကန်သော အဖြေ ပြန်ပေးခဲ့ပါတယ်။")
-
+                        logger.error("Gemini returned non-JSON response: %s", raw[:1000])
+                        raise RuntimeError("Gemini API က မမှန်ကန်သော အဖြေ ပြန်ပေးခဲ့ပါတယ်။")
                     if response.status < 400:
                         break
-
-                    error_message = (
-                        (data.get("error") or {}).get("message")
-                        or f"HTTP {response.status}"
-                    )
-                    logger.error("OpenAI API error (%s): %s", response.status, error_message)
+                    error_obj = data.get("error") or {}
+                    error_message = error_obj.get("message") or f"HTTP {response.status}"
+                    logger.error("Gemini API error (%s): %s", response.status, error_message)
                     if response.status in (429, 500, 502, 503, 504) and attempt < 2:
                         await asyncio.sleep(2 ** (attempt + 1))
                         continue
-                    raise RuntimeError(f"OpenAI API error: {error_message}")
+                    raise RuntimeError(f"Gemini API error ({response.status}): {error_message}")
 
-        answer_parts = []
-        for item in (data or {}).get("output", []):
-            if item.get("type") == "message":
-                for part in item.get("content", []):
-                    if part.get("type") == "output_text" and part.get("text"):
-                        answer_parts.append(part["text"])
-        answer = "\n".join(answer_parts).strip()
+        candidates = (data or {}).get("candidates") or []
+        parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
+        answer = "\n".join(part.get("text", "") for part in parts if part.get("text")).strip()
         if not answer:
-            logger.error("OpenAI response contained no output text: %s", data)
+            logger.error("Gemini response contained no text: %s", data)
             raise RuntimeError("AI က စာသားအဖြေ မပြန်ပေးခဲ့ပါ။")
 
         history.append({"role": "assistant", "content": answer})
         if len(history) > MAX_AI_HISTORY_MESSAGES:
             del history[:-MAX_AI_HISTORY_MESSAGES]
         return answer
-
     except asyncio.CancelledError:
-        # Do not leave a user message in history without a corresponding answer.
         if history and history[-1].get("role") == "user":
             history.pop()
         raise
     except Exception:
-        # Keep the conversation history coherent if the API call failed.
         if history and history[-1].get("role") == "user":
             history.pop()
         raise
@@ -259,10 +245,10 @@ async def ai_start_handler(message: Message):
         return
 
     user_id = message.from_user.id
-    if not OPENAI_API_KEY:
+    if not GEMINI_API_KEY:
         await message.answer(
             "⚠️ AI စနစ်ကို မဖွင့်ရသေးပါ။ Admin က Render Environment မှာ "
-            "OPENAI_API_KEY ထည့်သွင်းပေးရန် လိုအပ်ပါတယ်။"
+            "GEMINI_API_KEY ထည့်သွင်းပေးရန် လိုအပ်ပါတယ်။"
         )
         return
 
@@ -316,14 +302,14 @@ async def process_ai_text(message: Message):
         )
         return
 
-    if not OPENAI_API_KEY:
+    if not GEMINI_API_KEY:
         await message.answer("⚠️ AI စနစ်ကို မသတ်မှတ်ရသေးပါ။ Admin ကို ဆက်သွယ်ပေးပါ။")
         return
 
     async with get_ai_lock(user_id):
         thinking = await message.answer("🤖 စဉ်းစားနေပါတယ်ရှင့်…")
         try:
-            answer = await ask_openai(user_id, text_content)
+            answer = await ask_gemini(user_id, text_content)
             await delete_status_message(thinking)
             for chunk in split_telegram_text(answer):
                 await message.answer(chunk)
@@ -331,17 +317,17 @@ async def process_ai_text(message: Message):
             await delete_status_message(thinking)
             raise
         except Exception as exc:
-            logger.exception("OpenAI chat failed for user %s", user_id)
+            logger.exception("Gemini chat failed for user %s", user_id)
             await delete_status_message(thinking)
             message_text = str(exc)
-            if "OPENAI_API_KEY" in message_text:
+            if "GEMINI_API_KEY" in message_text:
                 await message.answer(
                     "⚠️ AI စနစ်ကို မသတ်မှတ်ရသေးပါ။ Admin ကို ဆက်သွယ်ပေးပါ။"
                 )
-            elif "OpenAI API error:" in message_text:
+            elif "Gemini API error" in message_text:
                 await message.answer(
                     "⚠️ AI API ချိတ်ဆက်မှု မအောင်မြင်ပါ။ Admin က Render Logs ထဲရှိ "
-                    "OpenAI API error ကို စစ်ဆေးပေးရန် လိုအပ်ပါတယ်။"
+                    "Gemini API error ကို စစ်ဆေးပေးရန် လိုအပ်ပါတယ်။"
                 )
             else:
                 await message.answer(
@@ -559,7 +545,7 @@ async def text_handler(message: Message):
         return
 
     # CRITICAL ROUTING GUARD: while AI mode is active, NEVER publish the text
-    # to the mailbox channel. Route it only to OpenAI and return immediately.
+    # to the mailbox channel. Route it only to Gemini and return immediately.
     if message.from_user and message.from_user.id in ai_active_users:
         await process_ai_text(message)
         return
