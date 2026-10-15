@@ -350,13 +350,44 @@ class AlbumState:
 # BAD WORD CHECK
 # =========================================================
 
+def _is_word_char(char: str) -> bool:
+    """Treat Unicode letters, combining marks and numbers as part of a word.
+
+    This matters for Burmese: substring matching can confuse different words
+    such as ``စပ`` and ``စပ်``. Spaces and punctuation delimit exact words.
+    """
+    import unicodedata
+    return bool(char) and unicodedata.category(char)[0] in {"L", "M", "N"}
+
+
+def _has_exact_word(text: str, word: str) -> bool:
+    """True only when `word` appears with word boundaries on both sides."""
+    start = 0
+    while True:
+        index = text.find(word, start)
+        if index < 0:
+            return False
+        end = index + len(word)
+        left_ok = index == 0 or not _is_word_char(text[index - 1])
+        right_ok = end == len(text) or not _is_word_char(text[end])
+        if left_ok and right_ok:
+            return True
+        start = index + 1
+
+
 def find_bad_word(text: str | None) -> str | None:
-    """Return the first matched prohibited word, for a clear moderation notice."""
+    """Return a prohibited word only when it matches as an exact word/phrase.
+
+    A bad word embedded inside another Burmese word is not a match. Punctuation
+    around a bad word is allowed, and multiword entries must match as a phrase.
+    """
     if not text:
         return None
     normalized = text.casefold()
-    for word in BAD_WORDS:
-        if word.casefold() in normalized:
+    # Prefer longer phrases first so a specific listed phrase is reported.
+    for word in sorted(BAD_WORDS, key=len, reverse=True):
+        candidate = word.casefold()
+        if _has_exact_word(normalized, candidate):
             return word
     return None
 
